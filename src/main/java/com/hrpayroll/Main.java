@@ -1,5 +1,6 @@
 package com.hrpayroll;
 
+import com.hrpayroll.view.LoginFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -9,18 +10,17 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(
-                    UIManager.getSystemLookAndFeelClassName()
+                        UIManager.getSystemLookAndFeelClassName()
                 );
             } catch (Exception e) {
                 System.err.println(
-                    "Không thể thiết lập giao diện: "
-                    + e.getMessage()
+                        "Khong the thiet lap giao dien: "
+                        + e.getMessage()
                 );
             }
 
-            System.out.println(
-                "HR-Payroll-Management started."
-            );
+            LoginFrame loginFrame = new LoginFrame();
+            loginFrame.setVisible(true);
         });
     }
 }

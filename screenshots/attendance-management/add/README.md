@@ -1,0 +1,1 @@
+NOTE: Hiện tại nhân viên đi quá giờ chưa được tự động tính là đi muộn. Sẽ sửa sau

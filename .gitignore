@@ -1,2 +1,9 @@
 /target/
 huongdan.md
+
+# Cấu hình kết nối DB (chứa mật khẩu)
+src/main/resources/db.properties
+
+# NetBeans
+/nbproject/private/
+/nbactions.xml

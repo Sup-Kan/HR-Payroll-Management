@@ -1,8 +1,3 @@
--- HR-Payroll-Management
--- Giai đoạn 2: Thiết kế cơ sở dữ liệu
--- Tương thích MySQL 8.0+ / MariaDB có hỗ trợ CHECK.
--- Chạy script này bằng tài khoản có quyền CREATE DATABASE.
-
 CREATE DATABASE IF NOT EXISTS hr_payroll_management
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
@@ -11,7 +6,6 @@ USE hr_payroll_management;
 
 SET NAMES utf8mb4;
 
--- Chạy lại schema: xóa các bảng theo thứ tự phụ thuộc.
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS payroll_details;
 DROP TABLE IF EXISTS payroll_periods;
@@ -69,7 +63,9 @@ CREATE TABLE employees (
     INDEX idx_employees_name (full_name),
     INDEX idx_employees_status (employment_status),
     CONSTRAINT chk_employee_resigned_date
-      CHECK (resigned_at IS NULL OR resigned_at >= hire_date)
+      CHECK (resigned_at IS NULL OR resigned_at >= hire_date),
+    CONSTRAINT chk_employee_code_format
+      CHECK (employee_code REGEXP '^NV[0-9]{3}$' AND BINARY employee_code = BINARY UPPER(employee_code))
 ) ENGINE=InnoDB;
 
 CREATE TABLE accounts (

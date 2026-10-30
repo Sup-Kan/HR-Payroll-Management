@@ -1,6 +1,3 @@
--- HR-Payroll-Management
--- Giai đoạn 2: Dữ liệu mẫu giả lập
--- Chạy sau schema.sql. Tất cả dữ liệu nhân viên đều là dữ liệu giả.
 USE hr_payroll_management;
 SET NAMES utf8mb4;
 
@@ -18,25 +15,20 @@ INSERT INTO positions (position_code, position_name, base_salary, allowance_amou
 INSERT INTO employees
 (employee_code, full_name, date_of_birth, gender, phone, address, department_id, position_id, hire_date, employment_status)
 VALUES
-('NV0001', 'Nguyễn Minh An', '1998-03-12', 'MALE', '0900000001', 'Hà Nội', 1, 1, '2024-01-15', 'ACTIVE'),
-('NV0002', 'Trần Thu Hà', '1996-08-21', 'FEMALE', '0900000002', 'Đà Nẵng', 2, 2, '2023-06-01', 'ACTIVE'),
-('NV0003', 'Lê Quốc Bình', '1999-11-05', 'MALE', '0900000003', 'TP. Hồ Chí Minh', 3, 3, '2025-02-10', 'ACTIVE'),
-('NV0004', 'Phạm Ngọc Mai', '1992-04-17', 'FEMALE', '0900000004', 'Hà Nội', 1, 4, '2022-09-01', 'ACTIVE');
+('NV001', 'Nguyễn Minh An', '1998-03-12', 'MALE', '0900000001', 'Hà Nội', 1, 1, '2024-01-15', 'ACTIVE'),
+('NV002', 'Trần Thu Hà', '1996-08-21', 'FEMALE', '0900000002', 'Đà Nẵng', 2, 2, '2023-06-01', 'ACTIVE'),
+('NV003', 'Lê Quốc Bình', '1999-11-05', 'MALE', '0900000003', 'TP. Hồ Chí Minh', 3, 3, '2025-02-10', 'ACTIVE'),
+('NV004', 'Phạm Ngọc Mai', '1992-04-17', 'FEMALE', '0900000004', 'Hà Nội', 1, 4, '2022-09-01', 'ACTIVE');
 
--- Mật khẩu ở đây chỉ là placeholder để minh họa cấu trúc.
--- Khi triển khai ứng dụng, phải thay bằng hash sinh từ BCrypt/Argon2; không lưu mật khẩu thuần.
 INSERT INTO accounts (employee_id, username, password_hash, role, account_status) VALUES
 (1, 'admin_demo', '$2a$12$REPLACE_WITH_REAL_BCRYPT_HASH', 'ADMIN', 'ACTIVE'),
 (1, 'hr_demo', '$2a$12$REPLACE_WITH_REAL_BCRYPT_HASH', 'HR', 'ACTIVE'),
 (2, 'accountant_demo', '$2a$12$REPLACE_WITH_REAL_BCRYPT_HASH', 'ACCOUNTANT', 'ACTIVE');
 
--- Các tỷ lệ 0% chỉ là giá trị khởi tạo để tránh tự áp đặt tỷ lệ pháp luật.
--- Cấu hình tỷ lệ đúng theo yêu cầu bài tập/chính sách đã được xác nhận.
 INSERT INTO payroll_settings
 (setting_id, standard_workdays_per_month, standard_hours_per_day, insurance_rate, income_tax_rate)
 VALUES (1, 22.00, 8.00, 0.00000, 0.00000);
 
--- Chấm công mẫu. Giờ công/tăng ca cần được tính và xác nhận ở tầng service.
 INSERT INTO attendance
 (employee_id, work_date, time_in, time_out, work_hours, overtime_hours, day_type, attendance_status, approval_status, note)
 VALUES
@@ -53,6 +45,3 @@ VALUES
 
 INSERT INTO payroll_periods (payroll_year, payroll_month, period_status)
 VALUES (2026, 10, 'OPEN');
-
--- Chưa chèn payroll_details: tạo dữ liệu lương bằng chức năng Tính lương
--- sau khi dữ liệu chấm công và quyết định đã được kiểm tra.
