@@ -1,5 +1,6 @@
 /target/
 huongdan.md
+/screenshots/
 
 # Cấu hình kết nối DB (chứa mật khẩu)
 src/main/resources/db.properties
