@@ -1,6 +1,7 @@
 package com.hrpayroll.view;
 
 import com.hrpayroll.model.Feature;
+import com.hrpayroll.model.DatabaseEnvironment;
 import com.hrpayroll.util.Session;
 
 import javax.swing.*;
@@ -111,8 +112,11 @@ public class DashboardFrame extends JFrame {
             return "Chưa đăng nhập";
         }
 
+        DatabaseEnvironment env = Session.getDatabaseEnvironment();
+        String environment = env == null ? "Chưa chọn DB" : env.getLabel() + " (" + env.getDatabaseName() + ")";
         return "Người dùng: " + Session.getUsername()
-                + "  |  Vai trò: " + Session.getRole().getLabel();
+                + "  |  Vai trò: " + Session.getRole().getLabel()
+                + "  |  Môi trường: " + environment;
     }
 
     private void addMenuButton(JPanel menuPanel, Feature feature) {

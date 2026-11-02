@@ -1,10 +1,11 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.AccountDAO;
+import com.hrpayroll.dao.AccountDAO.EmployeeOption;
 import com.hrpayroll.model.Account;
 import com.hrpayroll.model.Feature;
 import com.hrpayroll.model.Role;
 import com.hrpayroll.service.AccountService;
-import com.hrpayroll.service.DemoData;
 import com.hrpayroll.util.DateUtils;
 import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.FormUtils;
@@ -16,15 +17,14 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
-import java.time.LocalDate;
+// import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * Quản lý tài khoản và phân quyền (mục 3.8), chỉ Admin truy cập.
- * Mật khẩu chỉ được kiểm tra hợp lệ, không được giữ lại: khi nối DB,
- * mật khẩu được băm BCrypt rồi lưu vào accounts.password_hash.
+ * Quản lý tài khoản và phân quyền. Dữ liệu được đọc/ghi trực tiếp qua AccountDAO.
+ * Mật khẩu được băm BCrypt trước khi lưu vào accounts.password_hash.
  */
 public class AccountFrame extends JFrame {
 
@@ -37,8 +37,8 @@ public class AccountFrame extends JFrame {
     private static final String LOCK_TEXT = "Khóa tài khoản";
     private static final String UNLOCK_TEXT = "Mở khóa";
 
-    private final List<Account> accounts =
-        new ArrayList<>(DemoData.accounts());
+    private final List<Account> accounts = new ArrayList<>();
+    private final List<EmployeeOption> employees = new ArrayList<>();
 
     private JTextField usernameField;
     private JComboBox<Object> employeeCombo;
@@ -74,7 +74,7 @@ public class AccountFrame extends JFrame {
 
         initComponents();
         initEvents();
-        refreshTable();
+        reloadFromDatabase();
         applyFilter();
     }
 
@@ -127,9 +127,7 @@ public class AccountFrame extends JFrame {
 
         employeeCombo = new JComboBox<>();
         employeeCombo.addItem(NO_EMPLOYEE);
-        for (DemoData.Employee employee : DemoData.activeEmployees()) {
-            employeeCombo.addItem(employee);
-        }
+        loadEmployeeOptions();
 
         roleCombo = new JComboBox<>(Role.values());
         statusField = new JTextField(14);
@@ -242,6 +240,7 @@ public class AccountFrame extends JFrame {
 
         refreshButton.addActionListener(e -> {
             searchField.setText("");
+            reloadFromDatabase();
             applyFilter();
             accountTable.clearSelection();
             creating = false;
@@ -270,6 +269,26 @@ public class AccountFrame extends JFrame {
     // Bảng và tìm kiếm
     // ------------------------------------------------------------------
 
+    private void reloadFromDatabase() {
+        try {
+            accounts.clear();
+            accounts.addAll(AccountDAO.findAll());
+            refreshTable();
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể tải tài khoản từ database: " + ex.getMessage());
+        }
+    }
+
+    private void loadEmployeeOptions() {
+        try {
+            employees.clear();
+            employees.addAll(AccountDAO.findActiveEmployees());
+            for (EmployeeOption employee : employees) employeeCombo.addItem(employee);
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể tải danh sách nhân viên: " + ex.getMessage());
+        }
+    }
+
     private void refreshTable() {
         accountTable.clearSelection();
         tableModel.setRowCount(0);
@@ -288,14 +307,15 @@ public class AccountFrame extends JFrame {
         }
     }
 
-    private static String employeeText(String code) {
+    private String employeeText(String code) {
         if (code == null) {
             return "-";
         }
 
-        DemoData.Employee employee = DemoData.findEmployee(code);
-
-        return employee == null ? code : employee.toString();
+        for (EmployeeOption employee : employees) {
+            if (employee.getCode().equals(code)) return employee.toString();
+        }
+        return code;
     }
 
     private void applyFilter() {
@@ -318,7 +338,7 @@ public class AccountFrame extends JFrame {
 
                 Account account = accounts.get(entry.getIdentifier());
 
-                return account.getUsername().contains(keyword)
+                return account.getUsername().toLowerCase(Locale.ROOT).contains(keyword)
                     || employeeText(account.getEmployeeCode())
                         .toLowerCase(Locale.ROOT).contains(keyword);
             }
@@ -365,33 +385,23 @@ public class AccountFrame extends JFrame {
         }
 
         Object selected = employeeCombo.getSelectedItem();
-        String employeeCode = selected instanceof DemoData.Employee
-            ? ((DemoData.Employee) selected).getCode() : null;
-
-        Account account = new Account(
-            AccountService.normalizeUsername(usernameField.getText()),
-            employeeCode,
-            (Role) roleCombo.getSelectedItem(),
-            false,
-            LocalDate.now(),
-            null
-        );
-
-        accounts.add(account);
-
-        passwordField.setText("");
-        confirmField.setText("");
-        creating = false;
-        refreshTable();
-        showBlankState();
-
-        Dialogs.info(
-            this,
-            "Đã tạo tài khoản " + account.getUsername() + ".\n"
-            + "Mật khẩu chưa được lưu: khi nối cơ sở dữ liệu, mật khẩu sẽ "
-            + "được băm BCrypt rồi mới lưu.\n"
-            + "Tài khoản này chưa đăng nhập được ở bản thử nghiệm."
-        );
+        String employeeCode = selected instanceof EmployeeOption
+            ? ((EmployeeOption) selected).getCode() : null;
+        String username = AccountService.normalizeUsername(usernameField.getText());
+        char[] password = passwordField.getPassword();
+        try {
+            AccountDAO.create(username, employeeCode, (Role) roleCombo.getSelectedItem(), password);
+            passwordField.setText("");
+            confirmField.setText("");
+            creating = false;
+            reloadFromDatabase();
+            showBlankState();
+            Dialogs.info(this, "Đã tạo tài khoản " + username + " trong database.");
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể tạo tài khoản: " + ex.getMessage());
+        } finally {
+            java.util.Arrays.fill(password, '\0');
+        }
     }
 
     private void changePassword() {
@@ -431,12 +441,15 @@ public class AccountFrame extends JFrame {
             return;
         }
 
-        Dialogs.info(
-            this,
-            "Đã đặt lại mật khẩu cho " + account.getUsername() + ".\n"
-            + "Bản thử nghiệm chưa lưu mật khẩu; khi nối cơ sở dữ liệu "
-            + "mật khẩu sẽ được băm BCrypt."
-        );
+        char[] password = newField.getPassword();
+        try {
+            AccountDAO.updatePassword(account.getUsername(), password);
+            Dialogs.info(this, "Đã cập nhật mật khẩu cho " + account.getUsername() + ".");
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể đổi mật khẩu: " + ex.getMessage());
+        } finally {
+            java.util.Arrays.fill(password, '\0');
+        }
     }
 
     private void changeRole() {
@@ -479,15 +492,15 @@ public class AccountFrame extends JFrame {
             return;
         }
 
-        account.setRole(newRole);
-        refreshTable();
-        showBlankState();
-
-        Dialogs.info(
-            this,
-            "Đã đổi vai trò của " + account.getUsername() + " thành "
-            + newRole.getLabel() + ".\nCó hiệu lực ở lần đăng nhập sau."
-        );
+        try {
+            AccountDAO.updateRole(account.getUsername(), newRole);
+            account.setRole(newRole);
+            reloadFromDatabase();
+            showBlankState();
+            Dialogs.info(this, "Đã đổi vai trò của " + account.getUsername() + " thành " + newRole.getLabel() + ".");
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể cập nhật vai trò: " + ex.getMessage());
+        }
     }
 
     private void toggleLock() {
@@ -517,9 +530,14 @@ public class AccountFrame extends JFrame {
             return;
         }
 
-        account.setLocked(locking);
-        refreshTable();
-        showBlankState();
+        try {
+            AccountDAO.updateStatus(account.getUsername(), locking);
+            account.setLocked(locking);
+            reloadFromDatabase();
+            showBlankState();
+        } catch (Exception ex) {
+            Dialogs.error(this, "Không thể cập nhật trạng thái tài khoản: " + ex.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -566,8 +584,8 @@ public class AccountFrame extends JFrame {
         for (int i = 0; i < employeeCombo.getItemCount(); i++) {
             Object item = employeeCombo.getItemAt(i);
 
-            if (item instanceof DemoData.Employee
-                    && ((DemoData.Employee) item).getCode()
+            if (item instanceof EmployeeOption
+                    && ((EmployeeOption) item).getCode()
                         .equals(account.getEmployeeCode())) {
                 employeeCombo.setSelectedIndex(i);
             }

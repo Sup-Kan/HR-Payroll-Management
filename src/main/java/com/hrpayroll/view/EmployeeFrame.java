@@ -8,6 +8,8 @@ import java.awt.*;
 import com.hrpayroll.util.DateUtils;
 import com.hrpayroll.util.EmployeeCodeUtils;
 import com.hrpayroll.util.TableStyler;
+import com.hrpayroll.dao.EmployeeDAO;
+import java.sql.SQLException;
 
 public class EmployeeFrame extends JFrame {
 
@@ -49,6 +51,7 @@ public class EmployeeFrame extends JFrame {
 
         initComponents();
         initEvents();
+        loadEmployeesFromDatabase();
     }
 
     private void initComponents() {
@@ -214,21 +217,18 @@ public class EmployeeFrame extends JFrame {
         deleteButton.setEnabled(false);
         setFormEditable(false, false);
 
-        // Tạm dùng dữ liệu mẫu trong bộ nhớ để kiểm tra giao diện.
-        // Dữ liệu này sẽ mất khi đóng ứng dụng.
-        tableModel.addRow(new Object[]{
-            "NV001", "Nguyễn Văn An", "15/05/1998",
-            "Nam", "0900000001", "Hà Nội",
-            "Nhân sự", "Nhân viên", "01/03/2024",
-            "Đang làm việc"
-        });
+        // Dữ liệu được nạp từ database sau khi khởi tạo giao diện.
+    }
 
-        tableModel.addRow(new Object[]{
-            "NV002", "Trần Thị Bình", "20/08/1996",
-            "Nữ", "0900000002", "Hà Nội",
-            "Kế toán", "Trưởng phòng", "10/06/2023",
-            "Đang làm việc"
-        });
+    private void loadEmployeesFromDatabase() {
+        try {
+            tableModel.setRowCount(0);
+            for (Object[] row : EmployeeDAO.findAllRows()) tableModel.addRow(row);
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không tải được hồ sơ nhân viên từ database đang chọn: " + ex.getMessage(),
+                "Lỗi dữ liệu", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void addFormRow(

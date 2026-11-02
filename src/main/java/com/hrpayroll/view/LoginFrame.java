@@ -1,7 +1,8 @@
 package com.hrpayroll.view;
 
 import com.hrpayroll.model.Role;
-import com.hrpayroll.service.MockAuthService;
+import com.hrpayroll.dao.AccountDAO;
+import java.sql.SQLException;
 import com.hrpayroll.util.Session;
 
 import javax.swing.*;
@@ -113,35 +114,25 @@ public class LoginFrame extends JFrame {
                 return;
             }
 
-            // Chỉ mô phỏng đăng nhập trong Giai đoạn 3: chưa xác thực với
-            // cơ sở dữ liệu, chỉ gán vai trò cho ba tài khoản mẫu.
-            Role role = MockAuthService.authenticate(username, password);
-
-            if (role == null) {
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Tài khoản không tồn tại trong bản thử nghiệm.\n"
-                        + "Dùng thử: " + MockAuthService.DEMO_HINT,
-                        "Đăng nhập thất bại",
-                        JOptionPane.ERROR_MESSAGE
-                );
+            Role role;
+            try {
+                role = AccountDAO.authenticate(username, password);
+            } catch (SQLException dbError) {
+                JOptionPane.showMessageDialog(this,
+                    "Không thể xác thực với database đang chọn: " + dbError.getMessage(),
+                    "Lỗi kết nối", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
-            Session.login(
-                    MockAuthService.normalizeUsername(username), role
-            );
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Đăng nhập mô phỏng thành công!\n"
-                    + "Vai trò: " + role.getLabel(),
-                    "Thông báo",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
+            if (role == null) {
+                JOptionPane.showMessageDialog(this,
+                    "Tên đăng nhập hoặc mật khẩu không đúng, hoặc tài khoản đã bị khóa.",
+                    "Đăng nhập thất bại", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            Session.login(username.trim(), role);
 
             dispose();
-            new DashboardFrame().setVisible(true);
+            new EnvironmentSelectionFrame().setVisible(true);
 
         } finally {
             java.util.Arrays.fill(password, '\0');

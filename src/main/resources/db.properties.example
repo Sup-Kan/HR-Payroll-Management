@@ -1,5 +1,10 @@
-# Sao chép file này thành db.properties (cùng thư mục) rồi sửa thông tin.
-# db.properties đã nằm trong .gitignore, không commit lên GitHub.
-db.url=jdbc:mariadb://localhost:3306/hr_payroll_management
+# Sao chép file này thành db.properties trong src/main/resources.
+# Không commit db.properties vì file đó chứa mật khẩu cá nhân.
+db.host=localhost
+db.port=3306
 db.user=root
 db.password=
+
+# Mật khẩu mẫu để mở môi trường dữ liệu gốc: Primary@2026
+# Hãy đặt mật khẩu riêng trong db.properties; không ghi mật khẩu thật tại đây.
+db.primary.access.password=
