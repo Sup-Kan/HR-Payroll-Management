@@ -1,6 +1,7 @@
 package com.hrpayroll.util;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
@@ -15,6 +16,9 @@ public final class DateUtils {
 
     /** Chuỗi mẫu hiển thị cho người dùng (nhãn, tooltip, thông báo lỗi). */
     public static final String DISPLAY_PATTERN = "dd/MM/yyyy";
+
+    private static final DateTimeFormatter DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     // STRICT: từ chối ngày không tồn tại (31/02/2026) và bắt buộc đủ 2 chữ số
     // ngày/tháng. STRICT yêu cầu dùng "uuuu" thay cho "yyyy" khi phân tích.
@@ -56,6 +60,11 @@ public final class DateUtils {
 
     public static String format(LocalDate date) {
         return date.format(FORMATTER);
+    }
+
+    /** Ngày giờ dạng dd/MM/yyyy HH:mm, dùng để hiển thị thời điểm duyệt, đăng nhập. */
+    public static String formatDateTime(LocalDateTime dateTime) {
+        return dateTime.format(DATE_TIME_FORMATTER);
     }
 
     private static LocalDate tryParse(Object value) {

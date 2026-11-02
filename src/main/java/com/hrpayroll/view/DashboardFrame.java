@@ -1,12 +1,19 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.model.Feature;
+import com.hrpayroll.util.Session;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-
-//import com.hrpayroll.view.RewardDisciplineFrame;
+import java.util.EnumMap;
+import java.util.Map;
 
 public class DashboardFrame extends JFrame {
+
+    /** Mỗi chức năng chỉ mở một cửa sổ; bấm lại sẽ đưa cửa sổ đó lên trước. */
+    private final Map<Feature, JFrame> openFrames =
+            new EnumMap<>(Feature.class);
 
     public DashboardFrame() {
         setTitle("Dashboard - Quản lý Nhân sự & Tiền lương");
@@ -26,6 +33,8 @@ public class DashboardFrame extends JFrame {
                 "HỆ THỐNG QUẢN LÝ NHÂN SỰ & TIỀN LƯƠNG"
         );
         titleLabel.setFont(new Font("SansSerif", Font.BOLD, 22));
+        // Chừa chỗ phía trên để dấu chồng (Ố, Ề, Ấ) không bị cắt.
+        titleLabel.setBorder(new EmptyBorder(6, 0, 0, 0));
 
         JLabel subtitleLabel = new JLabel(
                 "Dashboard - Màn hình chính"
@@ -37,71 +46,35 @@ public class DashboardFrame extends JFrame {
         titlePanel.add(subtitleLabel);
 
         JButton logoutButton = new JButton("Đăng xuất");
+        JButton exitButton = new JButton("Thoát");
+
+        JPanel sessionButtons = new JPanel(
+                new FlowLayout(FlowLayout.RIGHT, 8, 0)
+        );
+        sessionButtons.add(logoutButton);
+        sessionButtons.add(exitButton);
 
         headerPanel.add(titlePanel, BorderLayout.CENTER);
-        headerPanel.add(logoutButton, BorderLayout.EAST);
+        headerPanel.add(sessionButtons, BorderLayout.EAST);
 
         mainPanel.add(headerPanel, BorderLayout.NORTH);
 
-        // Các nút chức năng
+        // Các nút chức năng, bật/tắt theo vai trò đang đăng nhập
         JPanel menuPanel = new JPanel(new GridLayout(3, 2, 16, 16));
         menuPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
 
-        addMenuButton(
-                menuPanel,
-                "Quản lý nhân viên",
-                "Hồ sơ và thông tin nhân sự",
-                "EmployeeFrame"
-        );
-
-        addMenuButton(
-                menuPanel,
-                "Quản lý chấm công",
-                "Ngày công và giờ làm",
-                "AttendanceFrame"
-        );
-
-        addMenuButton(
-                menuPanel,
-                "Khen thưởng / Kỷ luật",
-                "Theo dõi các quyết định",
-                "RewardDisciplineFrame"
-        );
-
-        addMenuButton(
-                menuPanel,
-                "Quản lý tiền lương",
-                "Theo dõi bảng lương",
-                "PayrollFrame"
-        );
-
-        addMenuButton(
-                menuPanel,
-                "Báo cáo, thống kê",
-                "Tổng hợp dữ liệu hệ thống",
-                "ReportFrame"
-        );
-
-        addMenuButton(
-                menuPanel,
-                "Quản lý tài khoản",
-                "Tài khoản người dùng",
-                "AccountFrame"
-        );
+        for (Feature feature : Feature.values()) {
+            addMenuButton(menuPanel, feature);
+        }
 
         mainPanel.add(menuPanel, BorderLayout.CENTER);
 
         // Thanh trạng thái
-        JLabel statusLabel = new JLabel(
-                "Trạng thái: Giao diện thử nghiệm"
-        );
-        statusLabel.setBorder(
-                new EmptyBorder(8, 0, 0, 0)
-        );
+        JLabel statusLabel = new JLabel(buildStatusText());
+        statusLabel.setBorder(new EmptyBorder(8, 0, 0, 0));
 
         mainPanel.add(statusLabel, BorderLayout.SOUTH);
 
-        // Đăng xuất về màn hình đăng nhập
         logoutButton.addActionListener(e -> {
             int choice = JOptionPane.showConfirmDialog(
                     this,
@@ -111,70 +84,113 @@ public class DashboardFrame extends JFrame {
             );
 
             if (choice == JOptionPane.YES_OPTION) {
+                closeModuleWindows();
+                Session.logout();
                 dispose();
                 new LoginFrame().setVisible(true);
             }
         });
+
+        exitButton.addActionListener(e -> {
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    "Bạn có chắc chắn muốn thoát chương trình?",
+                    "Xác nhận thoát",
+                    JOptionPane.YES_NO_OPTION
+            );
+
+            if (choice == JOptionPane.YES_OPTION) {
+                closeModuleWindows();
+                dispose();
+            }
+        });
     }
 
-    private void addMenuButton(
-            JPanel menuPanel,
-            String title,
-            String description,
-            String frameName
-    ) {
+    private String buildStatusText() {
+        if (!Session.isLoggedIn()) {
+            return "Chưa đăng nhập";
+        }
+
+        return "Người dùng: " + Session.getUsername()
+                + "  |  Vai trò: " + Session.getRole().getLabel();
+    }
+
+    private void addMenuButton(JPanel menuPanel, Feature feature) {
         JButton button = new JButton(
                 "<html><div style='text-align:center;'>"
-                + "<b>" + title + "</b><br><br>"
-                + description
+                + "<b>" + feature.getTitle() + "</b><br><br>"
+                + feature.getDescription()
                 + "</div></html>"
         );
 
         button.setFont(new Font("SansSerif", Font.PLAIN, 15));
         button.setFocusPainted(false);
 
-        button.addActionListener(e ->
-                openPlaceholderFrame(title, frameName)
-        );
+        if (Session.canAccess(feature)) {
+            button.addActionListener(e -> openFeature(feature));
+        } else {
+            button.setEnabled(false);
+            button.setToolTipText(
+                    "Vai trò hiện tại không có quyền truy cập chức năng này"
+            );
+        }
 
         menuPanel.add(button);
     }
 
-    private void openPlaceholderFrame(
-            String title,
-            String frameName
-    ) {
-        if ("EmployeeFrame".equals(frameName)) {
-            new EmployeeFrame().setVisible(true);
+    private void openFeature(Feature feature) {
+        // Kiểm tra lại ở đây phòng khi hàm được gọi từ nơi khác ngoài nút.
+        if (!Session.canAccess(feature)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Bạn không có quyền truy cập chức năng này.",
+                    "Không đủ quyền",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
-        
-        if ("AttendanceFrame".equals(frameName)) {
-            new AttendanceFrame().setVisible(true);
+
+        JFrame frame = openFrames.get(feature);
+
+        if (frame != null && frame.isDisplayable()) {
+            if (frame.getState() == Frame.ICONIFIED) {
+                frame.setState(Frame.NORMAL);
+            }
+            frame.toFront();
+            frame.requestFocus();
             return;
         }
-        
-//        if ("RewardDisciplineFrame".equals(frameName)) {
-//            new RewardDisciplineFrame().setVisible(true);
-//            return;
-//        }
 
-        JFrame frame = new JFrame(title);
-        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(650, 420);
-        frame.setLocationRelativeTo(this);
-
-        JLabel message = new JLabel(
-                "<html><div style='text-align:center;'>"
-                + "<h2>" + title + "</h2>"
-                + "<p>Màn hình này sẽ được triển khai "
-                + "ở bước tiếp theo.</p>"
-                + "<p>Hiện tại đây là giao diện giữ chỗ.</p>"
-                + "</div></html>",
-                SwingConstants.CENTER
-        );
-
-        frame.add(message, BorderLayout.CENTER);
+        frame = createFrame(feature);
+        openFrames.put(feature, frame);
         frame.setVisible(true);
+    }
+
+    private JFrame createFrame(Feature feature) {
+        switch (feature) {
+            case EMPLOYEE:
+                return new EmployeeFrame();
+            case ATTENDANCE:
+                return new AttendanceFrame();
+            case REWARD_DISCIPLINE:
+                return new RewardDisciplineFrame();
+            case PAYROLL:
+                return new PayrollFrame();
+            case REPORT:
+                return new ReportFrame();
+            case ACCOUNT:
+                return new AccountFrame();
+            default:
+                throw new IllegalArgumentException(
+                    "Chưa có màn hình cho chức năng: " + feature
+                );
+        }
+    }
+
+    private void closeModuleWindows() {
+        for (JFrame frame : openFrames.values()) {
+            frame.dispose();
+        }
+        openFrames.clear();
     }
 }

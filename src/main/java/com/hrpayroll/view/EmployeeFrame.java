@@ -58,6 +58,8 @@ public class EmployeeFrame extends JFrame {
 
         JLabel titleLabel = new JLabel("QUẢN LÝ NHÂN VIÊN");
         titleLabel.setFont(new Font("SansSerif", Font.BOLD, 22));
+        // Chừa chỗ phía trên để dấu chồng (Ố, Ề, Ấ) không bị cắt.
+        titleLabel.setBorder(new EmptyBorder(6, 0, 0, 0));
 
         JLabel subtitleLabel = new JLabel(
             "Quản lý hồ sơ và thông tin nhân sự"

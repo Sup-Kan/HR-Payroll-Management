@@ -1,5 +1,9 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.model.Role;
+import com.hrpayroll.service.MockAuthService;
+import com.hrpayroll.util.Session;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -25,6 +29,8 @@ public class LoginFrame extends JFrame {
                 SwingConstants.CENTER
         );
         titleLabel.setFont(new Font("SansSerif", Font.BOLD, 21));
+        // Chừa chỗ phía trên để dấu chồng (Ố, Ề, Ấ) không bị cắt.
+        titleLabel.setBorder(new EmptyBorder(6, 0, 0, 0));
         mainPanel.add(titleLabel, BorderLayout.NORTH);
 
         JPanel formPanel = new JPanel(new GridBagLayout());
@@ -107,11 +113,29 @@ public class LoginFrame extends JFrame {
                 return;
             }
 
-            // Chỉ mô phỏng đăng nhập trong Giai đoạn 3.
-            // Chưa xác thực thông tin từ cơ sở dữ liệu.
+            // Chỉ mô phỏng đăng nhập trong Giai đoạn 3: chưa xác thực với
+            // cơ sở dữ liệu, chỉ gán vai trò cho ba tài khoản mẫu.
+            Role role = MockAuthService.authenticate(username, password);
+
+            if (role == null) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Tài khoản không tồn tại trong bản thử nghiệm.\n"
+                        + "Dùng thử: " + MockAuthService.DEMO_HINT,
+                        "Đăng nhập thất bại",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+
+            Session.login(
+                    MockAuthService.normalizeUsername(username), role
+            );
+
             JOptionPane.showMessageDialog(
                     this,
-                    "Đăng nhập mô phỏng thành công!",
+                    "Đăng nhập mô phỏng thành công!\n"
+                    + "Vai trò: " + role.getLabel(),
                     "Thông báo",
                     JOptionPane.INFORMATION_MESSAGE
             );
