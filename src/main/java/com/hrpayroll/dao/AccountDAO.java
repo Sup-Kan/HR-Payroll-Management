@@ -21,6 +21,7 @@ public final class AccountDAO {
         public EmployeeOption(int id, String code, String name) { this.id=id; this.code=code; this.name=name; }
         public int getId() { return id; }
         public String getCode() { return code; }
+        public String getName() { return name; }
         @Override public String toString() { return code + " - " + name; }
     }
 

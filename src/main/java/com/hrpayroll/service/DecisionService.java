@@ -11,6 +11,11 @@ public final class DecisionService {
     private DecisionService() {
     }
 
+    /** Phần đầu mã, ví dụ "QD-KT-2026-". */
+    public static String codePrefix(DecisionType type, int year) {
+        return "QD-" + type.getCodePart() + "-" + year + "-";
+    }
+
     /** Mã kế tiếp theo loại và năm, đánh số tăng dần từ 001. */
     public static String nextCode(
             List<Decision> existing, DecisionType type, int year) {

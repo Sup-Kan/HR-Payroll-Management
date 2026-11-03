@@ -1,10 +1,12 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.AccountDAO;
+import com.hrpayroll.dao.AccountDAO.EmployeeOption;
+import com.hrpayroll.dao.DecisionDAO;
 import com.hrpayroll.model.Decision;
 import com.hrpayroll.model.DecisionStatus;
 import com.hrpayroll.model.DecisionType;
 import com.hrpayroll.service.DecisionService;
-import com.hrpayroll.service.DemoData;
 import com.hrpayroll.util.DateUtils;
 import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.FormUtils;
@@ -17,8 +19,8 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.sql.SQLException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +29,7 @@ import java.util.Locale;
 /**
  * Quản lý quyết định khen thưởng / kỷ luật (mục 3.5).
  * Quyết định mới ở trạng thái "Chờ duyệt"; chỉ quyết định đã duyệt và có
- * số tiền mới được tính vào lương. Dữ liệu hiện nằm trong bộ nhớ.
+ * số tiền mới được tính vào lương. Dữ liệu đọc/ghi qua DecisionDAO.
  */
 public class RewardDisciplineFrame extends JFrame {
 
@@ -41,8 +43,7 @@ public class RewardDisciplineFrame extends JFrame {
     private static final String CHOOSE_EMPLOYEE = "-- Chọn nhân viên --";
     private static final String AUTO_CODE = "(tự tạo khi lưu)";
 
-    private final List<Decision> records =
-        new ArrayList<>(DemoData.decisions());
+    private final List<Decision> records = new ArrayList<>();
 
     private JTextField codeField;
     private JComboBox<Object> employeeCombo;
@@ -81,6 +82,7 @@ public class RewardDisciplineFrame extends JFrame {
 
         initComponents();
         initEvents();
+        loadFromDatabase();
         refreshTable();
         applyFilters();
     }
@@ -150,9 +152,7 @@ public class RewardDisciplineFrame extends JFrame {
 
         employeeCombo = new JComboBox<>();
         employeeCombo.addItem(CHOOSE_EMPLOYEE);
-        for (DemoData.Employee employee : DemoData.activeEmployees()) {
-            employeeCombo.addItem(employee);
-        }
+        loadEmployees();
 
         typeCombo = new JComboBox<>(DecisionType.values());
         dateField = new JTextField(12);
@@ -275,7 +275,8 @@ public class RewardDisciplineFrame extends JFrame {
             searchField.setText("");
             statusFilter.setSelectedIndex(0);
             typeFilter.setSelectedIndex(0);
-            applyFilters();
+            loadEmployees();
+            reloadFromDatabase();
             decisionTable.clearSelection();
             addingNew = false;
             showBlankState();
@@ -401,27 +402,33 @@ public class RewardDisciplineFrame extends JFrame {
             return;
         }
 
-        String code = DecisionService.nextCode(
-            records, input.type, input.date.getYear()
-        );
+        String code;
 
-        Decision decision = new Decision(
-            code, input.type,
-            input.employee.getCode(), input.employee.getName(),
-            input.date, input.reason, input.amount,
-            DecisionStatus.PENDING
-        );
+        try {
+            code = DecisionDAO.nextCode(input.type, input.date.getYear());
 
-        records.add(decision);
-        refreshTable();
+            Decision decision = new Decision(
+                code, input.type,
+                input.employee.getCode(), input.employee.getName(),
+                input.date, input.reason, input.amount,
+                DecisionStatus.PENDING
+            );
+
+            DecisionDAO.insert(decision, Session.getUsername());
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        reloadFromDatabase();
 
         addingNew = false;
         showBlankState();
 
         Dialogs.info(
             this,
-            "Đã lập quyết định " + code + " ở trạng thái Chờ duyệt.\n"
-            + "Dữ liệu mới nằm trong bộ nhớ, chưa lưu vào cơ sở dữ liệu."
+            "Đã lập quyết định " + code + " ở trạng thái Chờ duyệt "
+            + "và lưu vào cơ sở dữ liệu."
         );
     }
 
@@ -462,12 +469,14 @@ public class RewardDisciplineFrame extends JFrame {
             return;
         }
 
-        decision.update(
-            input.employee.getCode(), input.employee.getName(),
-            input.date, input.reason, input.amount
-        );
+        try {
+            DecisionDAO.update(preview);
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
 
-        refreshTable();
+        reloadFromDatabase();
         showBlankState();
         Dialogs.info(this, "Đã cập nhật quyết định " + decision.getCode() + ".");
     }
@@ -503,9 +512,14 @@ public class RewardDisciplineFrame extends JFrame {
         String approver = Session.getUsername() == null
             ? "(không xác định)" : Session.getUsername();
 
-        decision.approve(approver, LocalDateTime.now());
+        try {
+            DecisionDAO.approve(decision.getCode(), approver);
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
 
-        refreshTable();
+        reloadFromDatabase();
         showBlankState();
         Dialogs.info(this, "Đã phê duyệt quyết định " + decision.getCode() + ".");
     }
@@ -536,9 +550,14 @@ public class RewardDisciplineFrame extends JFrame {
             return;
         }
 
-        decision.cancel();
+        try {
+            DecisionDAO.cancel(decision.getCode());
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
 
-        refreshTable();
+        reloadFromDatabase();
         showBlankState();
     }
 
@@ -548,7 +567,7 @@ public class RewardDisciplineFrame extends JFrame {
 
     /** Dữ liệu form đã kiểm tra hợp lệ. */
     private static final class Input {
-        private DemoData.Employee employee;
+        private EmployeeOption employee;
         private DecisionType type;
         private LocalDate date;
         private Long amount;
@@ -565,12 +584,12 @@ public class RewardDisciplineFrame extends JFrame {
 
         Object selected = employeeCombo.getSelectedItem();
 
-        if (!(selected instanceof DemoData.Employee)) {
+        if (!(selected instanceof EmployeeOption)) {
             Dialogs.warn(this, "Vui lòng chọn nhân viên.");
             return null;
         }
 
-        input.employee = (DemoData.Employee) selected;
+        input.employee = (EmployeeOption) selected;
         input.type = existing == null
             ? (DecisionType) typeCombo.getSelectedItem()
             : existing.getType();
@@ -639,7 +658,7 @@ public class RewardDisciplineFrame extends JFrame {
         );
         reasonField.setText(decision.getReason());
         statusField.setText(decision.getStatus().getLabel());
-        selectEmployee(decision.getEmployeeCode());
+        selectEmployee(decision.getEmployeeCode(), decision.getEmployeeName());
 
         switch (decision.getStatus()) {
             case APPROVED:
@@ -664,18 +683,54 @@ public class RewardDisciplineFrame extends JFrame {
         }
     }
 
-    private void selectEmployee(String code) {
+    private void selectEmployee(String code, String name) {
         for (int i = 0; i < employeeCombo.getItemCount(); i++) {
             Object item = employeeCombo.getItemAt(i);
 
-            if (item instanceof DemoData.Employee
-                    && ((DemoData.Employee) item).getCode().equals(code)) {
+            if (item instanceof EmployeeOption
+                    && ((EmployeeOption) item).getCode().equals(code)) {
                 employeeCombo.setSelectedIndex(i);
                 return;
             }
         }
 
-        employeeCombo.setSelectedIndex(0);
+        // Nhân viên đã nghỉ việc không còn trong danh sách đang làm.
+        EmployeeOption former = new EmployeeOption(-1, code, name);
+        employeeCombo.addItem(former);
+        employeeCombo.setSelectedItem(former);
+    }
+
+    /** Nạp danh sách nhân viên đang làm việc vào ô chọn. */
+    private void loadEmployees() {
+        employeeCombo.removeAllItems();
+        employeeCombo.addItem(CHOOSE_EMPLOYEE);
+
+        try {
+            for (EmployeeOption employee : AccountDAO.findActiveEmployees()) {
+                employeeCombo.addItem(employee);
+            }
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được danh sách nhân viên.\n" + ex.getMessage());
+        }
+    }
+
+    /** Nạp toàn bộ quyết định từ database đang chọn. */
+    private void loadFromDatabase() {
+        try {
+            List<Decision> loaded = DecisionDAO.findAll();
+            records.clear();
+            records.addAll(loaded);
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được danh sách quyết định.\n" + ex.getMessage());
+        }
+    }
+
+    private void reloadFromDatabase() {
+        loadFromDatabase();
+        refreshTable();
+        applyFilters();
     }
 
     private void showBlankState() {

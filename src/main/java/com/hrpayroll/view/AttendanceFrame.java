@@ -1,10 +1,12 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.AttendanceDAO;
 import com.hrpayroll.model.AttendanceRecord;
 import com.hrpayroll.model.AttendanceType;
 import com.hrpayroll.service.AttendanceCalculator;
 import com.hrpayroll.service.AttendanceSummary;
 import com.hrpayroll.util.DateUtils;
+import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.EmployeeCodeUtils;
 import com.hrpayroll.util.TableStyler;
 
@@ -13,6 +15,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -42,7 +45,7 @@ public class AttendanceFrame extends JFrame {
     private static final Comparator<Object> NUMBER_COMPARATOR =
             (a, b) -> Double.compare(toNumber(a), toNumber(b));
 
-    /** Dữ liệu trong bộ nhớ; chỉ số trong danh sách trùng chỉ số dòng của model. */
+    /** Bản ghi đã nạp từ cơ sở dữ liệu; chỉ số trong danh sách trùng chỉ số dòng của model. */
     private final List<AttendanceRecord> records = new ArrayList<>();
 
     private JComboBox<Integer> monthCombo;
@@ -85,7 +88,7 @@ public class AttendanceFrame extends JFrame {
 
         initComponents();
         initEvents();
-        loadSampleData();
+        loadFromDatabase();
         refreshTable();
         applyFilters();
     }
@@ -348,7 +351,7 @@ public class AttendanceFrame extends JFrame {
             yearCombo.setSelectedItem(LocalDate.now().getYear());
             searchField.setText("");
 
-            applyFilters();
+            reloadFromDatabase();
             attendanceTable.clearSelection();
             showBlankState();
         });
@@ -378,31 +381,25 @@ public class AttendanceFrame extends JFrame {
     // Dữ liệu và bảng
     // ------------------------------------------------------------------
 
-    /** Dữ liệu minh họa trong bộ nhớ, thuộc tháng hiện tại. */
-    private void loadSampleData() {
-        LocalDate day1 = LocalDate.now().withDayOfMonth(1);
-        LocalDate day2 = LocalDate.now().withDayOfMonth(2);
+    /** Nạp toàn bộ chấm công từ database đang chọn; báo lỗi nếu không kết nối được. */
+    private boolean loadFromDatabase() {
+        try {
+            List<AttendanceRecord> loaded = AttendanceDAO.findAll();
+            records.clear();
+            records.addAll(loaded);
+            return true;
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được dữ liệu chấm công.\n" + ex.getMessage());
+            return false;
+        }
+    }
 
-        records.add(AttendanceCalculator.createRecord(
-            "NV001", "Nguyễn Văn An", day1,
-            LocalTime.of(8, 0), LocalTime.of(17, 0),
-            AttendanceType.PRESENT, ""
-        ));
-        records.add(AttendanceCalculator.createRecord(
-            "NV002", "Trần Thị Bình", day1,
-            null, null,
-            AttendanceType.PAID_LEAVE, "Nghỉ phép năm"
-        ));
-        records.add(AttendanceCalculator.createRecord(
-            "NV001", "Nguyễn Văn An", day2,
-            LocalTime.of(8, 0), LocalTime.of(19, 0),
-            AttendanceType.PRESENT, "Tăng ca làm báo cáo"
-        ));
-        records.add(AttendanceCalculator.createRecord(
-            "NV002", "Trần Thị Bình", day2,
-            LocalTime.of(8, 15), LocalTime.of(17, 0),
-            AttendanceType.PRESENT, "Đi muộn 15 phút"
-        ));
+    /** Nạp lại từ database rồi dựng lại bảng và bộ lọc. */
+    private void reloadFromDatabase() {
+        loadFromDatabase();
+        refreshTable();
+        applyFilters();
     }
 
     /** Dựng lại toàn bộ bảng từ danh sách bản ghi. */
@@ -521,12 +518,17 @@ public class AttendanceFrame extends JFrame {
             return;
         }
 
-        records.add(record);
-        refreshTable();
+        try {
+            AttendanceDAO.insert(record);
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        reloadFromDatabase();
 
         showMessage(
-            "Đã thêm bản ghi trong bộ nhớ. "
-            + "Dữ liệu chưa được lưu vào cơ sở dữ liệu."
+            "Đã lưu bản ghi vào cơ sở dữ liệu."
             + periodHint(record.getDate()),
             JOptionPane.INFORMATION_MESSAGE
         );
@@ -585,11 +587,17 @@ public class AttendanceFrame extends JFrame {
             return;
         }
 
-        records.set(modelRow, newRecord);
-        refreshTable();
+        try {
+            AttendanceDAO.update(oldRecord, newRecord);
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        reloadFromDatabase();
 
         showMessage(
-            "Đã cập nhật bản ghi trong bộ nhớ."
+            "Đã cập nhật bản ghi trong cơ sở dữ liệu."
             + periodHint(newRecord.getDate()),
             JOptionPane.INFORMATION_MESSAGE
         );
@@ -639,14 +647,20 @@ public class AttendanceFrame extends JFrame {
 
         int choice = JOptionPane.showConfirmDialog(
             this,
-            "Bạn có chắc muốn xóa bản ghi chấm công thử nghiệm này?",
+            "Bạn có chắc muốn xóa bản ghi chấm công này?",
             "Xác nhận xóa",
             JOptionPane.YES_NO_OPTION
         );
 
         if (choice == JOptionPane.YES_OPTION) {
-            records.remove(modelRow);
-            refreshTable();
+            try {
+                AttendanceDAO.delete(records.get(modelRow));
+            } catch (SQLException ex) {
+                Dialogs.error(this, ex.getMessage());
+                return;
+            }
+
+            reloadFromDatabase();
             addingNew = false;
             showBlankState();
         }
@@ -699,16 +713,21 @@ public class AttendanceFrame extends JFrame {
             return;
         }
 
-        for (AttendanceRecord record : targets) {
-            record.confirm();
+        int confirmed;
+
+        try {
+            confirmed = AttendanceDAO.confirm(targets);
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
         }
 
-        refreshTable();
+        reloadFromDatabase();
         addingNew = false;
         showBlankState();
 
         showMessage(
-            "Đã xác nhận công cho " + targets.size() + " bản ghi.",
+            "Đã xác nhận công cho " + confirmed + " bản ghi.",
             JOptionPane.INFORMATION_MESSAGE
         );
     }

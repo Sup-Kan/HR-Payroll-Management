@@ -1,6 +1,7 @@
 /target/
-# huongdan.md
-/dependency-reduced-pom.xml
+huongdan.md
+/screenshots/
+dependency-reduced-pom.xml
 
 # Cấu hình kết nối DB (chứa mật khẩu)
 src/main/resources/db.properties

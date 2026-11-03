@@ -5,9 +5,12 @@
 - Màn hình nhân viên nạp danh sách từ `employees` JOIN `departments` và `positions` của database đang chọn. Không còn hai dòng NV001/NV002 viết cứng.
 - Bổ sung `EmployeeDAO.findAllRows()`.
 
+- Chấm công: `AttendanceFrame` đọc/ghi bảng `attendance` qua `AttendanceDAO` (thêm, sửa, xóa, xác nhận công; chỉ bản ghi DRAFT mới sửa/xóa được, kiểm tra ngay trong SQL). Chưa hỗ trợ ca qua đêm và ngày lễ (`day_type` chỉ WEEKDAY/WEEKEND).
+- Khen thưởng/Kỷ luật: `RewardDisciplineFrame` đọc/ghi bảng `decisions` qua `DecisionDAO` (lập, sửa, phê duyệt có ghi người duyệt, hủy). Trạng thái được kiểm tra ngay trong SQL; danh sách nhân viên lấy từ DB.
+
 ## Cần hoàn thiện tiếp trước khi coi là triển khai đầy đủ
 - CRUD nhân viên hiện tại trong `EmployeeFrame` cần được chuyển toàn bộ sang INSERT/UPDATE/DELETE có kiểm tra quyền; lần cập nhật này mới chuyển nguồn nạp danh sách.
-- Chấm công, khen thưởng/kỷ luật, tiền lương và báo cáo vẫn còn logic/dữ liệu mẫu trong các frame/service tương ứng; chưa được phép coi là dữ liệu MariaDB hoàn chỉnh.
+- Tiền lương và báo cáo vẫn còn logic/dữ liệu mẫu trong các frame/service tương ứng; chưa được phép coi là dữ liệu MariaDB hoàn chỉnh.
 - Cần triển khai `PrimaryWriteGuard` ở tất cả thao tác ghi Primary, bao gồm xác nhận riêng của IT. Không được dựa riêng vào việc ẩn/khóa nút.
 - Cần kiểm thử tích hợp trên cả `hr_payroll_primary` và `hr_payroll_sandbox` với từng vai trò.
 
