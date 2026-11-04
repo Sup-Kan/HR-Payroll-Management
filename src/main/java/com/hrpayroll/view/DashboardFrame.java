@@ -2,11 +2,16 @@ package com.hrpayroll.view;
 
 import com.hrpayroll.model.Feature;
 import com.hrpayroll.model.DatabaseEnvironment;
+import com.hrpayroll.model.Role;
+import com.hrpayroll.util.DBConnection;
 import com.hrpayroll.util.Session;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -15,6 +20,9 @@ public class DashboardFrame extends JFrame {
     /** Mỗi chức năng chỉ mở một cửa sổ; bấm lại sẽ đưa cửa sổ đó lên trước. */
     private final Map<Feature, JFrame> openFrames =
             new EnumMap<>(Feature.class);
+
+    private final JLabel statusLabel = new JLabel();
+    private final JLabel environmentBadge = new JLabel("", SwingConstants.CENTER);
 
     public DashboardFrame() {
         setTitle("Dashboard - Quản lý Nhân sự & Tiền lương");
@@ -46,12 +54,28 @@ public class DashboardFrame extends JFrame {
         titlePanel.add(titleLabel);
         titlePanel.add(subtitleLabel);
 
+        environmentBadge.setOpaque(true);
+        environmentBadge.setForeground(Color.WHITE);
+        environmentBadge.setFont(new Font("SansSerif", Font.BOLD, 13));
+        environmentBadge.setBorder(new EmptyBorder(6, 12, 6, 12));
+
+        JButton switchButton = new JButton("Đổi môi trường");
+        Role role = Session.getRole();
+        boolean canSwitch = role == Role.ADMIN || role == Role.IT;
+        switchButton.setEnabled(canSwitch);
+        if (!canSwitch) {
+            switchButton.setToolTipText(
+                    "Chỉ Quản trị hệ thống và Công nghệ thông tin được đổi môi trường");
+        }
+
         JButton logoutButton = new JButton("Đăng xuất");
         JButton exitButton = new JButton("Thoát");
 
         JPanel sessionButtons = new JPanel(
                 new FlowLayout(FlowLayout.RIGHT, 8, 0)
         );
+        sessionButtons.add(environmentBadge);
+        sessionButtons.add(switchButton);
         sessionButtons.add(logoutButton);
         sessionButtons.add(exitButton);
 
@@ -71,10 +95,12 @@ public class DashboardFrame extends JFrame {
         mainPanel.add(menuPanel, BorderLayout.CENTER);
 
         // Thanh trạng thái
-        JLabel statusLabel = new JLabel(buildStatusText());
+        refreshEnvironmentDisplay();
         statusLabel.setBorder(new EmptyBorder(8, 0, 0, 0));
 
         mainPanel.add(statusLabel, BorderLayout.SOUTH);
+
+        switchButton.addActionListener(e -> switchEnvironment());
 
         logoutButton.addActionListener(e -> {
             int choice = JOptionPane.showConfirmDialog(
@@ -105,6 +131,84 @@ public class DashboardFrame extends JFrame {
                 dispose();
             }
         });
+    }
+
+    private void refreshEnvironmentDisplay() {
+        DatabaseEnvironment env = Session.getDatabaseEnvironment();
+        if (env == DatabaseEnvironment.PRIMARY) {
+            environmentBadge.setText("PRIMARY - Dữ liệu gốc");
+            environmentBadge.setBackground(new Color(214, 80, 30));
+        } else if (env == DatabaseEnvironment.SANDBOX) {
+            environmentBadge.setText("SANDBOX - Thử nghiệm");
+            environmentBadge.setBackground(new Color(30, 110, 190));
+        } else {
+            environmentBadge.setText("Chưa chọn DB");
+            environmentBadge.setBackground(Color.GRAY);
+        }
+        statusLabel.setText(buildStatusText());
+    }
+
+    /** Chuyển sang môi trường còn lại; chỉ Admin/IT, đóng mọi cửa sổ chức năng. */
+    private void switchEnvironment() {
+        Role role = Session.getRole();
+        if (role != Role.ADMIN && role != Role.IT) {
+            JOptionPane.showMessageDialog(this,
+                    "Bạn không có quyền đổi môi trường dữ liệu.",
+                    "Không đủ quyền", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        DatabaseEnvironment current = Session.getDatabaseEnvironment();
+        DatabaseEnvironment target = current == DatabaseEnvironment.PRIMARY
+                ? DatabaseEnvironment.SANDBOX : DatabaseEnvironment.PRIMARY;
+
+        char[] password = new char[0];
+        try {
+            if (target == DatabaseEnvironment.PRIMARY) {
+                JPasswordField field = new JPasswordField(20);
+                int ok = JOptionPane.showConfirmDialog(this,
+                        new Object[]{"Nhập mật khẩu truy cập dữ liệu gốc:", field},
+                        "Chuyển sang Primary", JOptionPane.OK_CANCEL_OPTION,
+                        JOptionPane.PLAIN_MESSAGE);
+                password = field.getPassword();
+                field.setText("");
+                if (ok != JOptionPane.OK_OPTION) {
+                    return;
+                }
+                if (!DBConnection.verifyPrimaryAccess(password)) {
+                    JOptionPane.showMessageDialog(this,
+                            "Mật khẩu truy cập dữ liệu gốc không chính xác.",
+                            "Không được phép truy cập", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+
+            try (Connection ignored = DBConnection.getConnection(target)) {
+                // xác nhận DB tồn tại và kết nối được
+            }
+
+            boolean hasOpen = openFrames.values().stream()
+                    .anyMatch(Window::isDisplayable);
+            String msg = "Chuyển sang " + target.getLabel() + "?";
+            if (hasOpen) {
+                msg += "\nTất cả cửa sổ chức năng đang mở sẽ bị đóng "
+                        + "(dữ liệu chưa lưu sẽ mất).";
+            }
+            int choice = JOptionPane.showConfirmDialog(this, msg,
+                    "Xác nhận đổi môi trường", JOptionPane.YES_NO_OPTION);
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+
+            closeModuleWindows();
+            Session.setDatabaseEnvironment(target);
+            refreshEnvironmentDisplay();
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(),
+                    "Không thể mở môi trường dữ liệu", JOptionPane.ERROR_MESSAGE);
+        } finally {
+            Arrays.fill(password, '\0');
+        }
     }
 
     private String buildStatusText() {
