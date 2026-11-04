@@ -99,6 +99,20 @@ public final class PayrollCalculator {
             return issues;
         }
 
+        boolean anyAttendance = false;
+
+        for (PayrollInput in : inputs) {
+            if (in.getPaidWorkdays().signum() > 0) {
+                anyAttendance = true;
+            }
+        }
+
+        if (!anyAttendance) {
+            issues.add(error(
+                "Kỳ này chưa có dữ liệu chấm công nào, không thể tính lương."
+            ));
+        }
+
         for (PayrollInput in : inputs) {
             String who = in.getEmployeeCode() + ": ";
 

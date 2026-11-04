@@ -1,11 +1,12 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.AttendanceDAO;
+import com.hrpayroll.dao.PayrollDAO;
 import com.hrpayroll.model.PayrollInput;
 import com.hrpayroll.model.PayrollIssue;
 import com.hrpayroll.model.PayrollResult;
 import com.hrpayroll.model.PayrollSettings;
 import com.hrpayroll.model.Role;
-import com.hrpayroll.service.DemoData;
 import com.hrpayroll.service.PayrollCalculator;
 import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.MoneyUtils;
@@ -21,17 +22,18 @@ import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Tính lương theo kỳ (mục 3.6): chọn kỳ, kiểm tra dữ liệu, tính lương,
  * xem chi tiết, lưu và chốt bảng lương. Chốt kỳ chặn tính lại; chỉ Admin
- * được mở lại kỳ đã chốt. Dữ liệu đầu vào hiện là dữ liệu mẫu trong bộ nhớ.
+ * được mở lại kỳ đã chốt. Đầu vào lấy từ DB (nhân viên, chức vụ, chấm công,
+ * quyết định đã duyệt); bảng lương, tỷ lệ và trạng thái chốt lưu qua PayrollDAO.
  */
 public class PayrollFrame extends JFrame {
 
@@ -50,7 +52,7 @@ public class PayrollFrame extends JFrame {
         return Double.compare(toNumber(a), toNumber(b));
     };
 
-    /** Trạng thái của một kỳ lương trong bộ nhớ. */
+    /** Trạng thái của kỳ lương đang chọn (nạp lại từ DB mỗi khi đổi kỳ). */
     private static final class PeriodState {
         private List<PayrollResult> results;
         private PayrollSettings usedSettings;
@@ -58,8 +60,8 @@ public class PayrollFrame extends JFrame {
         private boolean closed;
     }
 
-    private final List<PayrollInput> inputs = DemoData.payrollInputs();
-    private final Map<YearMonth, PeriodState> periods = new HashMap<>();
+    private List<PayrollInput> inputs = new ArrayList<>();
+    private PeriodState currentState = new PeriodState();
 
     private JComboBox<Integer> monthCombo;
     private JComboBox<Integer> yearCombo;
@@ -123,13 +125,17 @@ public class PayrollFrame extends JFrame {
         }
 
         yearCombo = new JComboBox<>();
+        // Kỳ mặc định: tháng có dữ liệu chấm công gần nhất.
+        YearMonth defaultPeriod = AttendanceDAO.latestPeriodOrNow();
         int currentYear = LocalDate.now().getYear();
-        for (int year = currentYear - 2; year <= currentYear + 1; year++) {
+        int firstYear = Math.min(currentYear - 2, defaultPeriod.getYear());
+        int lastYear = Math.max(currentYear + 1, defaultPeriod.getYear());
+        for (int year = firstYear; year <= lastYear; year++) {
             yearCombo.addItem(year);
         }
 
-        monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-        yearCombo.setSelectedItem(currentYear);
+        monthCombo.setSelectedItem(defaultPeriod.getMonthValue());
+        yearCombo.setSelectedItem(defaultPeriod.getYear());
 
         monthCombo.setPreferredSize(new Dimension(65, 24));
         monthCombo.setMinimumSize(new Dimension(65, 24));
@@ -254,8 +260,9 @@ public class PayrollFrame extends JFrame {
         backButton.addActionListener(e -> dispose());
 
         refreshButton.addActionListener(e -> {
-            monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-            yearCombo.setSelectedItem(LocalDate.now().getYear());
+            YearMonth latest = AttendanceDAO.latestPeriodOrNow();
+            monthCombo.setSelectedItem(latest.getMonthValue());
+            yearCombo.setSelectedItem(latest.getYear());
             loadPeriod();
             payrollTable.clearSelection();
         });
@@ -298,15 +305,7 @@ public class PayrollFrame extends JFrame {
     }
 
     private PeriodState state() {
-        YearMonth period = selectedPeriod();
-        PeriodState state = periods.get(period);
-
-        if (state == null) {
-            state = new PeriodState();
-            periods.put(period, state);
-        }
-
-        return state;
+        return currentState;
     }
 
     /** Nạp kỳ đang chọn: tỷ lệ đã dùng (nếu có), bảng và trạng thái. */
@@ -315,15 +314,45 @@ public class PayrollFrame extends JFrame {
             return;
         }
 
-        PeriodState state = state();
+        YearMonth period = selectedPeriod();
+        PeriodState fresh = new PeriodState();
+        PayrollSettings shown = null;
 
-        if (state.usedSettings != null) {
-            insuranceField.setText(PayrollSettings.toPercentText(
-                state.usedSettings.getInsuranceRate()
-            ));
-            taxField.setText(PayrollSettings.toPercentText(
-                state.usedSettings.getTaxRate()
-            ));
+        try {
+            PayrollDAO.SavedPeriod saved = PayrollDAO.loadSaved(period);
+
+            if (saved != null) {
+                // Kỳ đã có bảng lương lưu trong DB: hiện đúng số đã lưu.
+                fresh.results = saved.getResults();
+                fresh.usedSettings = saved.getSettings();
+                fresh.saved = true;
+                fresh.closed = saved.isClosed();
+                shown = saved.getSettings();
+
+                inputs = new ArrayList<>();
+                for (PayrollResult result : saved.getResults()) {
+                    inputs.add(result.getInput());
+                }
+            } else {
+                inputs = PayrollDAO.loadInputs(period);
+                shown = PayrollDAO.loadSettings();
+            }
+        } catch (SQLException ex) {
+            inputs = new ArrayList<>();
+            Dialogs.error(
+                this, "Không tải được dữ liệu kỳ lương.\n" + ex.getMessage()
+            );
+        }
+
+        currentState = fresh;
+
+        if (shown != null) {
+            insuranceField.setText(
+                PayrollSettings.toPercentText(shown.getInsuranceRate())
+            );
+            taxField.setText(
+                PayrollSettings.toPercentText(shown.getTaxRate())
+            );
         }
 
         refreshTable();
@@ -449,6 +478,16 @@ public class PayrollFrame extends JFrame {
         PayrollSettings settings = readSettings();
 
         if (settings == null) {
+            return;
+        }
+
+        // Lấy lại dữ liệu mới nhất từ DB (chấm công, quyết định có thể đã đổi).
+        try {
+            inputs = PayrollDAO.loadInputs(selectedPeriod());
+        } catch (SQLException ex) {
+            Dialogs.error(
+                this, "Không tải được dữ liệu kỳ lương.\n" + ex.getMessage()
+            );
             return;
         }
 
@@ -641,13 +680,23 @@ public class PayrollFrame extends JFrame {
             return;
         }
 
+        try {
+            PayrollDAO.save(
+                selectedPeriod(), state.results, state.usedSettings,
+                Session.getUsername()
+            );
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
         state.saved = true;
         refreshStateView();
 
         Dialogs.info(
             this,
-            "Đã lưu bảng lương trong bộ nhớ.\n"
-            + "Dữ liệu chưa được ghi vào cơ sở dữ liệu."
+            "Đã lưu bảng lương kỳ " + periodText() + " vào cơ sở dữ liệu.\n"
+            + "Tỷ lệ bảo hiểm và thuế cũng được lưu làm mặc định cho các kỳ sau."
         );
     }
 
@@ -682,6 +731,13 @@ public class PayrollFrame extends JFrame {
             return;
         }
 
+        try {
+            PayrollDAO.finalizePeriod(selectedPeriod(), Session.getUsername());
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
         state.closed = true;
         refreshTable();
         refreshStateView();
@@ -703,12 +759,15 @@ public class PayrollFrame extends JFrame {
             return;
         }
 
-        PeriodState state = state();
-        state.closed = false;
-        state.saved = false;
+        try {
+            PayrollDAO.reopenPeriod(selectedPeriod());
+        } catch (SQLException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
 
-        refreshTable();
-        refreshStateView();
+        // Bảng lương vẫn còn trong DB (về trạng thái đã tính); nạp lại để khớp.
+        loadPeriod();
     }
 
     // ------------------------------------------------------------------

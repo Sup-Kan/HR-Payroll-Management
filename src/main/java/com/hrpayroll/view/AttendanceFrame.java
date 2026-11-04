@@ -18,6 +18,7 @@ import java.awt.*;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -124,13 +125,18 @@ public class AttendanceFrame extends JFrame {
         }
 
         yearCombo = new JComboBox<>();
+        // Kỳ mặc định: tháng có dữ liệu chấm công gần nhất (không phải
+        // tháng hiện tại, vì tháng hiện tại có thể chưa có bản ghi nào).
+        YearMonth defaultPeriod = AttendanceDAO.latestPeriodOrNow();
         int currentYear = LocalDate.now().getYear();
-        for (int year = currentYear - 2; year <= currentYear + 1; year++) {
+        int firstYear = Math.min(currentYear - 2, defaultPeriod.getYear());
+        int lastYear = Math.max(currentYear + 1, defaultPeriod.getYear());
+        for (int year = firstYear; year <= lastYear; year++) {
             yearCombo.addItem(year);
         }
 
-        monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-        yearCombo.setSelectedItem(currentYear);
+        monthCombo.setSelectedItem(defaultPeriod.getMonthValue());
+        yearCombo.setSelectedItem(defaultPeriod.getYear());
 
         monthCombo.setPreferredSize(new Dimension(65, 24));
         monthCombo.setMinimumSize(new Dimension(65, 24));
@@ -347,8 +353,9 @@ public class AttendanceFrame extends JFrame {
         yearCombo.addActionListener(e -> applyFilters());
 
         refreshButton.addActionListener(e -> {
-            monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-            yearCombo.setSelectedItem(LocalDate.now().getYear());
+            YearMonth latest = AttendanceDAO.latestPeriodOrNow();
+            monthCombo.setSelectedItem(latest.getMonthValue());
+            yearCombo.setSelectedItem(latest.getYear());
             searchField.setText("");
 
             reloadFromDatabase();

@@ -1,16 +1,15 @@
 package com.hrpayroll.service;
 
-import com.hrpayroll.model.PayrollInput;
+import com.hrpayroll.dao.ReportDAO;
 import com.hrpayroll.model.PayrollResult;
-import com.hrpayroll.model.PayrollSettings;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * Tính số liệu thống kê cho màn hình báo cáo từ danh sách đầu vào,
- * độc lập với nguồn dữ liệu (dữ liệu mẫu hiện nay, DAO về sau).
+ * Tính số liệu thống kê cho màn hình báo cáo từ dữ liệu do ReportDAO và
+ * PayrollDAO cung cấp; lớp này không truy cập DB trực tiếp.
  */
 public final class ReportService {
 
@@ -58,7 +57,7 @@ public final class ReportService {
             return female;
         }
 
-        private void add(DemoData.Employee employee) {
+        private void add(ReportDAO.EmployeeRecord employee) {
             total++;
 
             if (employee.isActive()) {
@@ -69,7 +68,7 @@ public final class ReportService {
 
             if ("Nam".equals(employee.getGender())) {
                 male++;
-            } else {
+            } else if ("Nữ".equals(employee.getGender())) {
                 female++;
             }
         }
@@ -88,7 +87,8 @@ public final class ReportService {
         private final double overtimeHours;
 
         private AttendanceRow(
-                DemoData.Employee employee, DemoData.AttendanceStat stat) {
+                ReportDAO.EmployeeRecord employee,
+                ReportDAO.AttendanceStat stat) {
 
             this.code = employee.getCode();
             this.name = employee.getName();
@@ -150,7 +150,8 @@ public final class ReportService {
         private final long deduction;
         private final long net;
 
-        private PayrollRow(DemoData.Employee employee, PayrollResult result) {
+        private PayrollRow(
+                ReportDAO.EmployeeRecord employee, PayrollResult result) {
             this.code = employee.getCode();
             this.name = employee.getName();
             this.department = employee.getDepartment();
@@ -199,22 +200,23 @@ public final class ReportService {
         }
     }
 
-    /** Thống kê nhân viên theo phòng ban, theo thứ tự phòng ban của DemoData. */
+    /** Thống kê nhân viên theo phòng ban, theo thứ tự của danh sách phòng ban. */
     public static List<DepartmentStat> employeeStats(
-            List<DemoData.Employee> employees,
+            List<ReportDAO.EmployeeRecord> employees,
+            List<String> departments,
             String department,
             String keyword) {
 
         List<DepartmentStat> stats = new ArrayList<>();
 
-        for (String name : DemoData.DEPARTMENTS) {
+        for (String name : departments) {
             if (!matchesDepartment(name, department)) {
                 continue;
             }
 
             DepartmentStat stat = new DepartmentStat(name);
 
-            for (DemoData.Employee employee : employees) {
+            for (ReportDAO.EmployeeRecord employee : employees) {
                 if (name.equals(employee.getDepartment())
                         && matchesKeyword(employee, keyword)) {
                     stat.add(employee);
@@ -230,20 +232,20 @@ public final class ReportService {
     }
 
     public static List<AttendanceRow> attendanceStats(
-            List<DemoData.Employee> employees,
-            List<DemoData.AttendanceStat> stats,
+            List<ReportDAO.EmployeeRecord> employees,
+            List<ReportDAO.AttendanceStat> stats,
             String department,
             String keyword) {
 
         List<AttendanceRow> rows = new ArrayList<>();
 
-        for (DemoData.Employee employee : employees) {
+        for (ReportDAO.EmployeeRecord employee : employees) {
             if (!matchesDepartment(employee.getDepartment(), department)
                     || !matchesKeyword(employee, keyword)) {
                 continue;
             }
 
-            for (DemoData.AttendanceStat stat : stats) {
+            for (ReportDAO.AttendanceStat stat : stats) {
                 if (stat.getEmployeeCode().equals(employee.getCode())) {
                     rows.add(new AttendanceRow(employee, stat));
                 }
@@ -254,26 +256,22 @@ public final class ReportService {
     }
 
     public static List<PayrollRow> payrollStats(
-            List<DemoData.Employee> employees,
-            List<PayrollInput> inputs,
-            PayrollSettings settings,
+            List<ReportDAO.EmployeeRecord> employees,
+            List<PayrollResult> results,
             String department,
             String keyword) {
 
         List<PayrollRow> rows = new ArrayList<>();
 
-        for (DemoData.Employee employee : employees) {
+        for (ReportDAO.EmployeeRecord employee : employees) {
             if (!matchesDepartment(employee.getDepartment(), department)
                     || !matchesKeyword(employee, keyword)) {
                 continue;
             }
 
-            for (PayrollInput input : inputs) {
-                if (input.getEmployeeCode().equals(employee.getCode())) {
-                    rows.add(new PayrollRow(
-                        employee,
-                        PayrollCalculator.calculate(input, settings)
-                    ));
+            for (PayrollResult result : results) {
+                if (result.getEmployeeCode().equals(employee.getCode())) {
+                    rows.add(new PayrollRow(employee, result));
                 }
             }
         }
@@ -302,7 +300,7 @@ public final class ReportService {
     }
 
     private static boolean matchesKeyword(
-            DemoData.Employee employee, String keyword) {
+            ReportDAO.EmployeeRecord employee, String keyword) {
 
         if (keyword == null || keyword.trim().isEmpty()) {
             return true;

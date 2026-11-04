@@ -1,9 +1,15 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.AttendanceDAO;
+import com.hrpayroll.dao.PayrollDAO;
+import com.hrpayroll.dao.ReportDAO;
+import com.hrpayroll.model.PayrollInput;
+import com.hrpayroll.model.PayrollResult;
 import com.hrpayroll.model.PayrollSettings;
 import com.hrpayroll.service.AttendanceCalculator;
-import com.hrpayroll.service.DemoData;
+import com.hrpayroll.service.PayrollCalculator;
 import com.hrpayroll.service.ReportService;
+import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.MoneyUtils;
 import com.hrpayroll.util.TableStyler;
 
@@ -11,7 +17,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -19,7 +25,7 @@ import java.util.List;
 
 /**
  * Báo cáo, thống kê (mục 3.7): nhân viên theo phòng ban, ngày công và tiền
- * lương theo kỳ. Số liệu hiện lấy từ dữ liệu mẫu trong bộ nhớ.
+ * lương theo kỳ. Số liệu lấy từ DB (ReportDAO, PayrollDAO).
  */
 public class ReportFrame extends JFrame {
 
@@ -102,13 +108,17 @@ public class ReportFrame extends JFrame {
         }
 
         yearCombo = new JComboBox<>();
+        // Kỳ mặc định: tháng có dữ liệu chấm công gần nhất.
+        YearMonth defaultPeriod = AttendanceDAO.latestPeriodOrNow();
         int currentYear = LocalDate.now().getYear();
-        for (int year = currentYear - 2; year <= currentYear + 1; year++) {
+        int firstYear = Math.min(currentYear - 2, defaultPeriod.getYear());
+        int lastYear = Math.max(currentYear + 1, defaultPeriod.getYear());
+        for (int year = firstYear; year <= lastYear; year++) {
             yearCombo.addItem(year);
         }
 
-        monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-        yearCombo.setSelectedItem(currentYear);
+        monthCombo.setSelectedItem(defaultPeriod.getMonthValue());
+        yearCombo.setSelectedItem(defaultPeriod.getYear());
 
         monthCombo.setPreferredSize(new Dimension(65, 24));
         monthCombo.setMinimumSize(new Dimension(65, 24));
@@ -117,8 +127,13 @@ public class ReportFrame extends JFrame {
 
         departmentCombo = new JComboBox<>();
         departmentCombo.addItem(ReportService.ALL);
-        for (String department : DemoData.DEPARTMENTS) {
-            departmentCombo.addItem(department);
+        try {
+            for (String department : ReportDAO.findDepartments()) {
+                departmentCombo.addItem(department);
+            }
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được danh sách phòng ban.\n" + ex.getMessage());
         }
 
         keywordField = new JTextField(14);
@@ -186,8 +201,9 @@ public class ReportFrame extends JFrame {
         refreshButton.addActionListener(e -> {
             keywordField.setText("");
             departmentCombo.setSelectedIndex(0);
-            monthCombo.setSelectedItem(LocalDate.now().getMonthValue());
-            yearCombo.setSelectedItem(LocalDate.now().getYear());
+            YearMonth latest = AttendanceDAO.latestPeriodOrNow();
+            monthCombo.setSelectedItem(latest.getMonthValue());
+            yearCombo.setSelectedItem(latest.getYear());
             generateReport();
         });
 
@@ -241,10 +257,22 @@ public class ReportFrame extends JFrame {
     }
 
     private void showEmployeeReport() {
-        List<ReportService.DepartmentStat> stats =
-            ReportService.employeeStats(
-                DemoData.employees(), department(), keyword()
+        List<ReportService.DepartmentStat> stats;
+
+        try {
+            List<String> departments = new ArrayList<>(
+                ReportDAO.findDepartments()
             );
+            departments.add(ReportDAO.NO_DEPARTMENT);
+
+            stats = ReportService.employeeStats(
+                ReportDAO.findEmployees(), departments, department(), keyword()
+            );
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được số liệu nhân viên.\n" + ex.getMessage());
+            stats = new ArrayList<>();
+        }
 
         List<Object[]> rows = new ArrayList<>();
         int total = 0;
@@ -295,8 +323,13 @@ public class ReportFrame extends JFrame {
 
     private void showAttendanceReport() {
         List<Object[]> rows = new ArrayList<>();
+        boolean periodHasData = false;
 
-        if (hasSampleData()) {
+        try {
+            List<ReportDAO.AttendanceStat> stats =
+                ReportDAO.attendanceStats(period());
+            periodHasData = !stats.isEmpty();
+
             double present = 0;
             int paidLeave = 0;
             int unpaidLeave = 0;
@@ -305,7 +338,7 @@ public class ReportFrame extends JFrame {
 
             for (ReportService.AttendanceRow row
                     : ReportService.attendanceStats(
-                        DemoData.employees(), DemoData.attendanceStats(),
+                        ReportDAO.findEmployees(), stats,
                         department(), keyword())) {
 
                 rows.add(new Object[]{
@@ -333,6 +366,9 @@ public class ReportFrame extends JFrame {
                     unpaidLeave, absent
                 });
             }
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được số liệu ngày công.\n" + ex.getMessage());
         }
 
         setTable(
@@ -352,21 +388,51 @@ public class ReportFrame extends JFrame {
             }
         );
 
-        summaryLabel.setText(periodSummary(rows.isEmpty(),
+        summaryLabel.setText(periodSummary(periodHasData, rows.isEmpty(),
             "Công chuẩn của kỳ: "
             + PayrollSettings.STANDARD_WORKDAYS + " ngày."));
     }
 
     private void showPayrollReport() {
         List<Object[]> rows = new ArrayList<>();
+        boolean periodHasData = false;
+        String note = "";
 
-        if (hasSampleData()) {
-            // Số liệu minh họa: tỷ lệ bảo hiểm và thuế 0%, giống mặc định
-            // ở màn Tính lương.
+        try {
+            List<PayrollResult> results;
+            PayrollDAO.SavedPeriod saved = PayrollDAO.loadSaved(period());
+
+            if (saved != null) {
+                // Bảng lương đã lưu trong DB: báo cáo đúng số đã lưu.
+                periodHasData = true;
+                results = saved.getResults();
+                note = saved.isClosed()
+                    ? "Bảng lương đã chốt."
+                    : "Bảng lương đã lưu, chưa chốt.";
+            } else {
+                // Chưa lưu: tính dự kiến từ dữ liệu hiện hành với tỷ lệ mặc định.
+                List<PayrollInput> inputs = PayrollDAO.loadInputs(period());
+                PayrollSettings settings = PayrollDAO.loadSettings();
+
+                for (PayrollInput input : inputs) {
+                    if (input.getPaidWorkdays().signum() > 0) {
+                        periodHasData = true;
+                    }
+                }
+
+                results = periodHasData
+                    ? PayrollCalculator.calculateAll(inputs, settings)
+                    : new ArrayList<PayrollResult>();
+                note = "Số liệu dự kiến, chưa lưu bảng lương (bảo hiểm "
+                    + PayrollSettings.toPercentText(settings.getInsuranceRate())
+                    + "%, thuế "
+                    + PayrollSettings.toPercentText(settings.getTaxRate())
+                    + "%). Bảng lương chính thức xem ở màn Quản lý tiền lương.";
+            }
+
             List<ReportService.PayrollRow> data =
                 ReportService.payrollStats(
-                    DemoData.employees(), DemoData.payrollInputs(),
-                    new PayrollSettings(BigDecimal.ZERO, BigDecimal.ZERO),
+                    ReportDAO.findEmployees(), results,
                     department(), keyword()
                 );
 
@@ -395,6 +461,9 @@ public class ReportFrame extends JFrame {
                     MoneyUtils.format(totals[5])
                 });
             }
+        } catch (SQLException ex) {
+            Dialogs.error(this,
+                "Không tải được số liệu tiền lương.\n" + ex.getMessage());
         }
 
         setTable(
@@ -413,26 +482,19 @@ public class ReportFrame extends JFrame {
             }
         );
 
-        summaryLabel.setText(periodSummary(rows.isEmpty(),
-            "Số liệu minh họa, bảo hiểm và thuế tính 0%. "
-            + "Bảng lương chính thức xem ở màn Quản lý tiền lương."));
+        summaryLabel.setText(
+            periodSummary(periodHasData, rows.isEmpty(), note));
     }
 
-    /** Dữ liệu mẫu chỉ có cho kỳ mẫu (tháng hiện tại). */
-    private boolean hasSampleData() {
-        return period().equals(DemoData.samplePeriod());
-    }
+    private String periodSummary(
+            boolean periodHasData, boolean empty, String note) {
 
-    private String periodSummary(boolean empty, String note) {
         YearMonth period = period();
 
-        if (!hasSampleData()) {
-            YearMonth sample = DemoData.samplePeriod();
-
+        if (!periodHasData) {
             return String.format(
-                "Kỳ %02d/%d chưa có dữ liệu (dữ liệu mẫu chỉ có kỳ %02d/%d).",
-                period.getMonthValue(), period.getYear(),
-                sample.getMonthValue(), sample.getYear()
+                "Kỳ %02d/%d chưa có dữ liệu.",
+                period.getMonthValue(), period.getYear()
             );
         }
 

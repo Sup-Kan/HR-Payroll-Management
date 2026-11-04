@@ -96,6 +96,15 @@ class PayrollCalculatorTest {
     }
 
     @Test
+    void periodWithoutAnyAttendanceIsError() {
+        // Kỳ chưa có dữ liệu chấm công: mọi nhân viên 0 công -> không được tính lương
+        List<PayrollIssue> issues = PayrollCalculator.check(
+            List.of(input(10_000_000, 500_000, "0", "0", "0", "0", 0, 0, 0, 0)),
+            S10, null);
+        assertTrue(PayrollCalculator.hasError(issues));
+    }
+
+    @Test
     void pendingDecisionIsOnlyWarning() {
         List<PayrollIssue> issues = PayrollCalculator.check(
             List.of(input(10_000_000, 0, "22", "0", "0", "0", 0, 0, 0, 3)), S10, null);

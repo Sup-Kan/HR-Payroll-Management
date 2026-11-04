@@ -14,6 +14,7 @@ import java.sql.Time;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -79,6 +80,34 @@ public final class AttendanceDAO {
         }
 
         return list;
+    }
+
+    /**
+     * Kỳ (tháng/năm) có bản ghi chấm công gần nhất; nếu chưa có dữ liệu thì
+     * trả về tháng hiện tại. Dùng làm kỳ mặc định cho các màn hình theo kỳ.
+     */
+    public static YearMonth latestPeriod() throws SQLException {
+        String sql = "SELECT MAX(work_date) FROM attendance";
+
+        try (Connection c = DBConnection.getConnection();
+                PreparedStatement ps = c.prepareStatement(sql);
+                ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next() && rs.getDate(1) != null) {
+                return YearMonth.from(rs.getDate(1).toLocalDate());
+            }
+        }
+
+        return YearMonth.now();
+    }
+
+    /** Như latestPeriod nhưng không ném lỗi: lỗi DB thì dùng tháng hiện tại. */
+    public static YearMonth latestPeriodOrNow() {
+        try {
+            return latestPeriod();
+        } catch (SQLException ex) {
+            return YearMonth.now();
+        }
     }
 
     /** Thêm bản ghi mới ở trạng thái DRAFT. */
