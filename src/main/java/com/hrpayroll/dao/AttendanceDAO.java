@@ -101,6 +101,24 @@ public final class AttendanceDAO {
         return YearMonth.now();
     }
 
+    /** Ngày có bản ghi chấm công gần nhất; hôm nay nếu chưa có dữ liệu. */
+    public static LocalDate latestDateOrToday() {
+        String sql = "SELECT MAX(work_date) FROM attendance";
+
+        try (Connection c = DBConnection.getConnection();
+                PreparedStatement ps = c.prepareStatement(sql);
+                ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next() && rs.getDate(1) != null) {
+                return rs.getDate(1).toLocalDate();
+            }
+        } catch (SQLException ex) {
+            // dùng ngày hôm nay
+        }
+
+        return LocalDate.now();
+    }
+
     /** Như latestPeriod nhưng không ném lỗi: lỗi DB thì dùng tháng hiện tại. */
     public static YearMonth latestPeriodOrNow() {
         try {

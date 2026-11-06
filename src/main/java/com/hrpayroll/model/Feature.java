@@ -7,7 +7,9 @@ public enum Feature {
     REWARD_DISCIPLINE("Khen thưởng / Kỷ luật", "Theo dõi các quyết định"),
     PAYROLL("Quản lý tiền lương", "Theo dõi bảng lương"),
     REPORT("Báo cáo, thống kê", "Tổng hợp dữ liệu hệ thống"),
-    ACCOUNT("Quản lý tài khoản", "Tài khoản người dùng");
+    ACCOUNT("Quản lý tài khoản", "Tài khoản người dùng"),
+    CATALOG("Quản lý danh mục", "Phòng ban và chức vụ"),
+    PROFILE("Thông tin cá nhân", "Hồ sơ, chấm công, lương của bạn");
 
     private final String title;
     private final String description;

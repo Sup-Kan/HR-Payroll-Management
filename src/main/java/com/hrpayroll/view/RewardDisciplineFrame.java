@@ -50,7 +50,7 @@ public class RewardDisciplineFrame extends JFrame {
     private JComboBox<DecisionType> typeCombo;
     private JTextField dateField;
     private JTextField amountField;
-    private JTextField reasonField;
+    private JTextArea reasonField;
     private JTextField statusField;
     private JLabel noticeLabel;
 
@@ -157,7 +157,7 @@ public class RewardDisciplineFrame extends JFrame {
         typeCombo = new JComboBox<>(DecisionType.values());
         dateField = new JTextField(12);
         amountField = new JTextField(14);
-        reasonField = new JTextField(40);
+        reasonField = FormUtils.textArea(3, 40);
         statusField = new JTextField(14);
         statusField.setEditable(false);
 
@@ -190,7 +190,7 @@ public class RewardDisciplineFrame extends JFrame {
             "Số tiền (đồng):", amountField,
             "Trạng thái:", statusField
         );
-        FormUtils.addWideRow(formPanel, 3, "Lý do:", reasonField);
+        FormUtils.addWideRow(formPanel, 3, "Lý do:", FormUtils.scroll(reasonField));
         FormUtils.addWideRow(formPanel, 4, "", noticeLabel);
 
         JPanel topPanel = new JPanel(new BorderLayout(8, 8));
@@ -323,7 +323,7 @@ public class RewardDisciplineFrame extends JFrame {
             DateUtils.format(decision.getDate()),
             decision.getAmount() == null
                 ? "" : MoneyUtils.format(decision.getAmount()),
-            decision.getReason(),
+            decision.getReason() == null ? "" : decision.getReason().replaceAll("\\s*\\R\\s*", " "),
             decision.getStatus().getLabel()
         };
     }

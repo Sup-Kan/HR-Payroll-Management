@@ -97,7 +97,8 @@ public final class AccountDAO {
             if(ps.executeUpdate()!=1) throw new SQLException("Không tìm thấy tài khoản hoặc dữ liệu không thay đổi.");
         }
     }
-    private static String hashPassword(char[] password) {
+    /** Băm BCrypt (cost 12) để lưu vào accounts.password_hash. */
+    public static String hashPassword(char[] password) {
         return at.favre.lib.crypto.bcrypt.BCrypt.withDefaults().hashToString(12, password);
     }
 }

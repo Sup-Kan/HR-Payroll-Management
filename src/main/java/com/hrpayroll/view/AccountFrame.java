@@ -2,6 +2,7 @@ package com.hrpayroll.view;
 
 import com.hrpayroll.dao.AccountDAO;
 import com.hrpayroll.dao.AccountDAO.EmployeeOption;
+import com.hrpayroll.dao.PresenceDAO;
 import com.hrpayroll.model.Account;
 import com.hrpayroll.model.Feature;
 import com.hrpayroll.model.Role;
@@ -19,7 +20,9 @@ import javax.swing.table.TableRowSorter;
 import java.awt.*;
 // import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 
 /**
@@ -30,7 +33,7 @@ public class AccountFrame extends JFrame {
 
     private static final String[] COLUMNS = {
         "Tên đăng nhập", "Nhân viên", "Vai trò",
-        "Trạng thái", "Ngày tạo", "Đăng nhập gần nhất"
+        "Trạng thái", "Ngày tạo", "Đăng nhập gần nhất", "Đang đăng nhập"
     };
 
     private static final String NO_EMPLOYEE = "(Không gắn với nhân viên)";
@@ -38,6 +41,9 @@ public class AccountFrame extends JFrame {
     private static final String UNLOCK_TEXT = "Mở khóa";
 
     private final List<Account> accounts = new ArrayList<>();
+    private Set<String> onlineUsers = Collections.emptySet();
+    private Timer presenceTimer;
+    private boolean onlineError;
     private final List<EmployeeOption> employees = new ArrayList<>();
 
     private JTextField usernameField;
@@ -53,6 +59,7 @@ public class AccountFrame extends JFrame {
     private JTable accountTable;
     private DefaultTableModel tableModel;
     private TableRowSorter<DefaultTableModel> sorter;
+    private JButton profileButton;
 
     private JButton createButton;
     private JButton saveButton;
@@ -76,6 +83,60 @@ public class AccountFrame extends JFrame {
         initEvents();
         reloadFromDatabase();
         applyFilter();
+        startPresenceUpdates();
+    }
+
+    private static final int COL_ONLINE = 6;
+
+    private static boolean canSeePresence() {
+        return Session.getRole() == Role.ADMIN || Session.getRole() == Role.IT;
+    }
+
+    /** Làm mới cột "Trực tuyến" định kỳ, không đụng tới dòng đang chọn/đang sửa. */
+    private void startPresenceUpdates() {
+        if (!canSeePresence()) {
+            return;
+        }
+        presenceTimer = new Timer(PresenceDAO.HEARTBEAT_SECONDS * 1000,
+                e -> updatePresenceColumn());
+        presenceTimer.setInitialDelay(2000);
+        presenceTimer.start();
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                presenceTimer.stop();
+            }
+        });
+    }
+
+    private void updatePresenceColumn() {
+        new SwingWorker<Set<String>, Void>() {
+            @Override
+            protected Set<String> doInBackground() throws Exception {
+                return PresenceDAO.onlineUsernames();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    onlineUsers = get();
+                    onlineError = false;
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    onlineError = true;
+                }
+                for (int i = 0; i < accounts.size() && i < tableModel.getRowCount(); i++) {
+                    tableModel.setValueAt(onlineText(accounts.get(i)), i, COL_ONLINE);
+                }
+            }
+        }.execute();
+    }
+
+    private String onlineText(Account account) {
+        if (onlineError) {
+            return "Lỗi đọc";
+        }
+        return onlineUsers.contains(account.getUsername()) ? "● Đang đăng nhập" : "Không";
     }
 
     // ------------------------------------------------------------------
@@ -181,13 +242,19 @@ public class AccountFrame extends JFrame {
 
         TableStyler.apply(
             accountTable,
-            new int[] {150, 210, 100, 110, 100, 150},
+            new int[] {150, 210, 100, 110, 100, 150, 130},
             new int[] {
                 SwingConstants.LEFT, SwingConstants.LEFT,
                 SwingConstants.CENTER, SwingConstants.CENTER,
-                SwingConstants.CENTER, SwingConstants.CENTER
+                SwingConstants.CENTER, SwingConstants.CENTER,
+                SwingConstants.CENTER
             }
         );
+
+        // Chỉ Admin/IT thấy trạng thái trực tuyến (cột vẫn nằm trong model).
+        if (!canSeePresence()) {
+            accountTable.removeColumn(accountTable.getColumnModel().getColumn(COL_ONLINE));
+        }
 
         sorter = new TableRowSorter<>(tableModel);
         sorter.setComparator(4, DateUtils.COMPARATOR);
@@ -210,6 +277,7 @@ public class AccountFrame extends JFrame {
         passwordButton = new JButton("Đổi mật khẩu");
         roleButton = new JButton("Phân quyền");
         lockButton = new JButton(LOCK_TEXT);
+        profileButton = new JButton("Thông tin cá nhân");
         backButton = new JButton("Quay lại");
 
         JPanel buttonPanel = new JPanel(
@@ -220,6 +288,7 @@ public class AccountFrame extends JFrame {
         buttonPanel.add(passwordButton);
         buttonPanel.add(roleButton);
         buttonPanel.add(lockButton);
+        buttonPanel.add(profileButton);
         buttonPanel.add(backButton);
 
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
@@ -234,12 +303,14 @@ public class AccountFrame extends JFrame {
         roleButton.addActionListener(e -> changeRole());
         lockButton.addActionListener(e -> toggleLock());
         backButton.addActionListener(e -> dispose());
+        profileButton.addActionListener(e -> new ProfileFrame().setVisible(true));
 
         searchButton.addActionListener(e -> applyFilter());
         searchField.addActionListener(e -> applyFilter());
 
         refreshButton.addActionListener(e -> {
             searchField.setText("");
+            loadEmployeeOptions();
             reloadFromDatabase();
             applyFilter();
             accountTable.clearSelection();
@@ -271,6 +342,15 @@ public class AccountFrame extends JFrame {
 
     private void reloadFromDatabase() {
         try {
+            onlineUsers = canSeePresence()
+                    ? PresenceDAO.onlineUsernames() : Collections.emptySet();
+            onlineError = false;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            onlineUsers = Collections.emptySet();
+            onlineError = true;
+        }
+        try {
             accounts.clear();
             accounts.addAll(AccountDAO.findAll());
             refreshTable();
@@ -281,8 +361,12 @@ public class AccountFrame extends JFrame {
 
     private void loadEmployeeOptions() {
         try {
+            // Nạp lại từ DB mỗi lần: nhân viên thêm sau khi mở màn hình này
+            // phải xuất hiện trong danh sách.
             employees.clear();
             employees.addAll(AccountDAO.findActiveEmployees());
+            employeeCombo.removeAllItems();
+            employeeCombo.addItem(NO_EMPLOYEE);
             for (EmployeeOption employee : employees) employeeCombo.addItem(employee);
         } catch (Exception ex) {
             Dialogs.error(this, "Không thể tải danh sách nhân viên: " + ex.getMessage());
@@ -302,7 +386,8 @@ public class AccountFrame extends JFrame {
                 DateUtils.format(account.getCreatedAt()),
                 account.getLastLogin() == null
                     ? "Chưa đăng nhập"
-                    : DateUtils.formatDateTime(account.getLastLogin())
+                    : DateUtils.formatDateTime(account.getLastLogin()),
+                onlineText(account)
             });
         }
     }
@@ -356,6 +441,7 @@ public class AccountFrame extends JFrame {
 
         accountTable.clearSelection();
         creating = true;
+        loadEmployeeOptions();
         clearForm();
 
         statusField.setText("Hoạt động");

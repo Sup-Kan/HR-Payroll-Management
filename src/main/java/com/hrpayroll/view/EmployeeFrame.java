@@ -35,6 +35,8 @@ public class EmployeeFrame extends JFrame {
     private JButton deleteButton;
 
     private boolean addingNew = false;
+    /** true khi đang nạp dữ liệu vào form: không tự lọc lại danh sách chức vụ. */
+    private boolean loadingForm = false;
 
     private static final String[] COLUMNS = {
         "Mã NV", "Họ tên", "Ngày sinh", "Giới tính",
@@ -51,6 +53,7 @@ public class EmployeeFrame extends JFrame {
 
         initComponents();
         initEvents();
+        loadLookups();
         loadEmployeesFromDatabase();
     }
 
@@ -88,36 +91,21 @@ public class EmployeeFrame extends JFrame {
         phoneField = new JTextField(14);
         addressField = new JTextField(14);
 
-        departmentCombo = new JComboBox<>(
-            new String[]{
-                "Chưa chọn",
-                "Nhân sự",
-                "Kế toán",
-                "Kinh doanh",
-                "Kỹ thuật"
-            }
-        );
-
-        positionCombo = new JComboBox<>(
-            new String[]{
-                "Chưa chọn",
-                "Nhân viên",
-                "Trưởng nhóm",
-                "Trưởng phòng",
-                "Quản lý"
-            }
-        );
+        // Danh sách phòng ban/chức vụ được nạp từ database (loadLookups).
+        departmentCombo = new JComboBox<>(new String[]{"Chưa chọn"});
+        positionCombo = new JComboBox<>(new String[]{"Chưa chọn"});
 
         startDateField = new JTextField(14);
         statusCombo = new JComboBox<>(
             new String[]{"Đang làm việc", "Nghỉ việc"}
         );
 
-        codeField.setToolTipText("Ví dụ: " + EmployeeCodeUtils.EXAMPLE);
+        codeField.setToolTipText("Hệ thống tự cấp mã theo thứ tự, ví dụ "
+            + EmployeeCodeUtils.EXAMPLE);
         dobField.setToolTipText("Định dạng " + DateUtils.DISPLAY_PATTERN);
         startDateField.setToolTipText("Định dạng " + DateUtils.DISPLAY_PATTERN);
 
-        addFormRow(formPanel, 0, "Mã nhân viên:", codeField,
+        addFormRow(formPanel, 0, "Mã nhân viên (tự động):", codeField,
                    "Họ và tên:", nameField);
         addFormRow(formPanel, 1, "Ngày sinh (dd/MM/yyyy):", dobField,
                    "Giới tính:", genderCombo);
@@ -220,6 +208,49 @@ public class EmployeeFrame extends JFrame {
         // Dữ liệu được nạp từ database sau khi khởi tạo giao diện.
     }
 
+    private void loadLookups() {
+        try {
+            for (String name : EmployeeDAO.departmentNames()) departmentCombo.addItem(name);
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(this,
+                "Không tải được danh sách phòng ban/chức vụ: " + ex.getMessage(),
+                "Lỗi dữ liệu", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Nạp lại ô Chức vụ theo phòng ban đang chọn; giữ lại lựa chọn cũ nếu còn hợp lệ. */
+    private void refillPositions() {
+        Object previous = positionCombo.getSelectedItem();
+        positionCombo.removeAllItems();
+        positionCombo.addItem("Chưa chọn");
+
+        Object dept = departmentCombo.getSelectedItem();
+        if (dept != null && departmentCombo.getSelectedIndex() > 0) {
+            try {
+                for (String name : EmployeeDAO.positionNamesByDepartment(dept.toString())) {
+                    positionCombo.addItem(name);
+                }
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this,
+                    "Không tải được danh sách chức vụ: " + ex.getMessage(),
+                    "Lỗi dữ liệu", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+        if (previous != null) {
+            positionCombo.setSelectedItem(previous);
+        }
+    }
+
+    /** Tải lại bảng từ DB rồi chọn lại nhân viên theo mã (nếu có). */
+    private void reloadAndSelect(String code) {
+        loadEmployeesFromDatabase();
+        int row = code == null ? -1 : findRowByCode(code);
+        if (row >= 0) {
+            int view = employeeTable.convertRowIndexToView(row);
+            if (view >= 0) employeeTable.setRowSelectionInterval(view, view);
+        }
+    }
+
     private void loadEmployeesFromDatabase() {
         try {
             tableModel.setRowCount(0);
@@ -272,12 +303,29 @@ public class EmployeeFrame extends JFrame {
             addingNew = true;
             clearForm();
 
-            setFormEditable(true, true);
+            // Mã nhân viên do hệ thống cấp: chỉ hiển thị mã kế tiếp, không nhập tay.
+            try {
+                codeField.setText(EmployeeDAO.nextCode());
+            } catch (SQLException ex) {
+                showMessage("Không lấy được mã nhân viên kế tiếp: " + ex.getMessage(),
+                            JOptionPane.ERROR_MESSAGE);
+                addingNew = false;
+                return;
+            }
+
+            setFormEditable(true, false);
             saveButton.setEnabled(true);
             updateButton.setEnabled(false);
             deleteButton.setEnabled(false);
 
-            codeField.requestFocusInWindow();
+            nameField.requestFocusInWindow();
+        });
+
+        // Chọn phòng ban thì chỉ hiện chức vụ thuộc phòng ban đó.
+        departmentCombo.addActionListener(e -> {
+            if (!loadingForm) {
+                refillPositions();
+            }
         });
 
         saveButton.addActionListener(e -> saveEmployee());
@@ -434,21 +482,26 @@ public class EmployeeFrame extends JFrame {
             return;
         }
 
-        if (findRowByCode(code) >= 0) {
-            showMessage(
-                "Mã nhân viên đã tồn tại.",
-                JOptionPane.WARNING_MESSAGE
-            );
+        EmployeeDAO.Created created;
+        try {
+            created = EmployeeDAO.insert(readFormData());
+        } catch (SQLException ex) {
+            showMessage("Không thể thêm nhân viên: " + ex.getMessage(),
+                        JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        tableModel.addRow(readFormData());
+        loadEmployeesFromDatabase();
 
-        showMessage(
-            "Đã thêm dữ liệu mẫu vào bảng trong bộ nhớ.\n"
-            + "Dữ liệu chưa được lưu vào cơ sở dữ liệu.",
-            JOptionPane.INFORMATION_MESSAGE
-        );
+        String message = "Đã thêm nhân viên " + created.code + " vào cơ sở dữ liệu.";
+        if (created.username != null) {
+            message += "\n\nĐã tạo tài khoản đăng nhập:"
+                + "\n  Tên đăng nhập: " + created.username
+                + "\n  Vai trò: " + created.role.getLabel()
+                + "\n  Mật khẩu mẫu: " + EmployeeDAO.DEFAULT_PASSWORD
+                + "\nHãy đổi mật khẩu trong Quản lý tài khoản.";
+        }
+        showMessage(message, JOptionPane.INFORMATION_MESSAGE);
 
         clearForm();
         addingNew = false;
@@ -501,14 +554,17 @@ public class EmployeeFrame extends JFrame {
             return;
         }
 
-        for (int i = 0; i < data.length; i++) {
-            tableModel.setValueAt(data[i], modelRow, i);
+        try {
+            EmployeeDAO.update(data);
+        } catch (SQLException ex) {
+            showMessage("Không thể cập nhật nhân viên: " + ex.getMessage(),
+                        JOptionPane.ERROR_MESSAGE);
+            return;
         }
 
-        showMessage(
-            "Đã cập nhật dữ liệu trong bộ nhớ, chưa lưu vào cơ sở dữ liệu.",
-            JOptionPane.INFORMATION_MESSAGE
-        );
+        reloadAndSelect(String.valueOf(data[0]));
+        showMessage("Đã cập nhật nhân viên trong cơ sở dữ liệu.",
+                    JOptionPane.INFORMATION_MESSAGE);
     }
 
     private String buildUpdateComparison(String[] columns, Object[] oldData, Object[] newData) {
@@ -550,14 +606,19 @@ public class EmployeeFrame extends JFrame {
 
         if (choice == JOptionPane.YES_OPTION) {
             int modelRow = employeeTable.convertRowIndexToModel(viewRow);
-            tableModel.setValueAt("Nghỉ việc", modelRow, 9);
-            statusCombo.setSelectedItem("Nghỉ việc");
+            String code = String.valueOf(tableModel.getValueAt(modelRow, 0));
 
-            showMessage(
-                "Đã chuyển trạng thái trong bộ nhớ.\n"
-                + "Chưa cập nhật cơ sở dữ liệu.",
-                JOptionPane.INFORMATION_MESSAGE
-            );
+            try {
+                EmployeeDAO.markResigned(code);
+            } catch (SQLException ex) {
+                showMessage("Không thể cập nhật trạng thái: " + ex.getMessage(),
+                            JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            reloadAndSelect(code);
+            showMessage("Đã chuyển nhân viên " + code + " sang Nghỉ việc.",
+                        JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -602,6 +663,15 @@ public class EmployeeFrame extends JFrame {
     }
 
     private void loadForm(int row) {
+        loadingForm = true;
+        try {
+            fillForm(row);
+        } finally {
+            loadingForm = false;
+        }
+    }
+
+    private void fillForm(int row) {
         codeField.setText(String.valueOf(tableModel.getValueAt(row, 0)));
         nameField.setText(String.valueOf(tableModel.getValueAt(row, 1)));
         dobField.setText(String.valueOf(tableModel.getValueAt(row, 2)));
@@ -609,6 +679,7 @@ public class EmployeeFrame extends JFrame {
         phoneField.setText(String.valueOf(tableModel.getValueAt(row, 4)));
         addressField.setText(String.valueOf(tableModel.getValueAt(row, 5)));
         departmentCombo.setSelectedItem(tableModel.getValueAt(row, 6));
+        refillPositions();
         positionCombo.setSelectedItem(tableModel.getValueAt(row, 7));
         startDateField.setText(String.valueOf(tableModel.getValueAt(row, 8)));
         statusCombo.setSelectedItem(tableModel.getValueAt(row, 9));
@@ -622,6 +693,7 @@ public class EmployeeFrame extends JFrame {
         phoneField.setText("");
         addressField.setText("");
         departmentCombo.setSelectedIndex(0);
+        refillPositions();
         positionCombo.setSelectedIndex(0);
         startDateField.setText("");
         statusCombo.setSelectedIndex(0);

@@ -27,7 +27,7 @@ ORDER = ['departments', 'positions', 'employees', 'accounts', 'payroll_settings'
 
 COLUMNS = {
     'departments': ['department_code', 'department_name', 'description'],
-    'positions': ['position_code', 'position_name', 'base_salary', 'allowance_amount', 'description'],
+    'positions': ['position_code', 'position_name', 'base_salary', 'allowance_amount', 'description', 'department_id'],
     'employees': ['employee_code', 'full_name', 'date_of_birth', 'gender', 'phone', 'address',
                   'department_id', 'position_id', 'hire_date', 'employment_status'],
     'payroll_settings': ['setting_id', 'standard_workdays_per_month', 'standard_hours_per_day',

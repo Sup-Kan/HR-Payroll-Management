@@ -8,6 +8,7 @@ CREATE TABLE accounts (
     account_status ENUM('ACTIVE','LOCKED') NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at DATETIME NULL,
+    last_seen_at DATETIME NULL,
     CONSTRAINT fk_accounts_employee
       FOREIGN KEY (employee_id) REFERENCES employees(employee_id)
       ON UPDATE CASCADE ON DELETE SET NULL,

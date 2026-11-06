@@ -27,7 +27,7 @@ Hai script có lệnh xóa bảng cũ trong đúng database đích trước khi 
 
 Ứng dụng hiện vẫn dùng `MockAuthService`: mọi mật khẩu không rỗng được chấp nhận cho username hợp lệ. Sau đăng nhập, chọn môi trường dữ liệu. Môi trường Sandbox được chọn mặc định; Primary yêu cầu mật khẩu `db.primary.access.password`.
 
-Tài khoản mẫu: `admin_demo`, `hr01`–`hr05`, `accountant01`–`accountant05`, `it01`–`it20`, `security01`–`security09`, `cleaner01`–`cleaner06`, `operations01`–`operations04`.
+Tên đăng nhập mẫu: `admin_demo` và các tài khoản theo tên nhân viên không dấu nối gạch dưới (ví dụ `tran_thu_ha`); xem `database/data/accounts.sql`.
 
 Mật khẩu mẫu được băm trong SQL: `HrDemo@2026`. Khi chạy ứng dụng demo, `MockAuthService` chỉ kiểm tra username và chấp nhận mật khẩu không rỗng; việc xác thực BCrypt từ bảng `accounts` sẽ được tích hợp ở giai đoạn AuthService/JDBC.
 

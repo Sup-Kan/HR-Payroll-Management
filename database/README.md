@@ -60,7 +60,7 @@ Cuối `install.sql` có bước kiểm tra: số dòng từng bảng, 11 khóa 
 
 Có 50 tài khoản: 1 Admin, 5 HR, 5 Kế toán, 20 IT, 9 Bảo vệ, 6 Lao công, 4 Vận hành. Tất cả tài khoản mẫu dùng mật khẩu `HrDemo@2026` trong hash BCrypt. Chỉ dùng cho demo; đổi mật khẩu trước khi dùng dữ liệu thật.
 
-Danh sách username: `admin_demo`, `hr01`–`hr05`, `accountant01`–`accountant05`, `it01`–`it20`, `security01`–`security09`, `cleaner01`–`cleaner06`, `operations01`–`operations04`.
+Tên đăng nhập mẫu: `admin_demo` và các tài khoản theo tên nhân viên không dấu nối gạch dưới (ví dụ `tran_thu_ha`); xem `database/data/accounts.sql`.
 
 ## Lưu ý bảo mật quan trọng
 

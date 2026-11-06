@@ -46,6 +46,10 @@ CREATE TABLE positions (
     allowance_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     description VARCHAR(255) NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    department_id INT UNSIGNED NULL,
+    CONSTRAINT fk_positions_department
+      FOREIGN KEY (department_id) REFERENCES departments(department_id)
+      ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT chk_positions_base_salary CHECK (base_salary >= 0),
     CONSTRAINT chk_positions_allowance CHECK (allowance_amount >= 0)
 ) ENGINE=InnoDB;
@@ -90,6 +94,7 @@ CREATE TABLE accounts (
     account_status ENUM('ACTIVE','LOCKED') NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at DATETIME NULL,
+    last_seen_at DATETIME NULL,
     CONSTRAINT fk_accounts_employee
       FOREIGN KEY (employee_id) REFERENCES employees(employee_id)
       ON UPDATE CASCADE ON DELETE SET NULL,

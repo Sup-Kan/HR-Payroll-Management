@@ -7,6 +7,10 @@ CREATE TABLE positions (
     allowance_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     description VARCHAR(255) NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    department_id INT UNSIGNED NULL,
+    CONSTRAINT fk_positions_department
+      FOREIGN KEY (department_id) REFERENCES departments(department_id)
+      ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT chk_positions_base_salary CHECK (base_salary >= 0),
     CONSTRAINT chk_positions_allowance CHECK (allowance_amount >= 0)
 ) ENGINE=InnoDB;

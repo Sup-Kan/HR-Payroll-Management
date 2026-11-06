@@ -1,10 +1,10 @@
-ADMIN,Quản trị hệ thống,18000000,2500000,Quản trị hệ thống và tài khoản
-HR_MANAGER,Trưởng nhóm nhân sự,16000000,2000000,Phụ trách nhân sự
-HR_STAFF,Nhân viên nhân sự,9500000,700000,Nghiệp vụ nhân sự
-ACC_MANAGER,Kế toán trưởng,17000000,2200000,Phụ trách kế toán
-ACCOUNTANT,Kế toán viên,11000000,900000,Nghiệp vụ kế toán
-IT_MANAGER,Trưởng nhóm IT,20000000,3000000,Quản lý công nghệ thông tin
-IT_ENGINEER,Kỹ sư công nghệ thông tin,14500000,1500000,Phát triển và vận hành hệ thống
-SECURITY,Nhân viên bảo vệ,7500000,500000,Đảm bảo an ninh
-CLEANER,Nhân viên vệ sinh,6800000,400000,Vệ sinh văn phòng
-OPERATIONS,Nhân viên vận hành,9000000,600000,Hỗ trợ vận hành
+ADMIN,Quản trị hệ thống,18000000,2500000,Quản trị hệ thống và tài khoản,3
+HR_MANAGER,Trưởng nhóm nhân sự,16000000,2000000,Phụ trách nhân sự,1
+HR_STAFF,Nhân viên nhân sự,9500000,700000,Nghiệp vụ nhân sự,1
+ACC_MANAGER,Kế toán trưởng,17000000,2200000,Phụ trách kế toán,2
+ACCOUNTANT,Kế toán viên,11000000,900000,Nghiệp vụ kế toán,2
+IT_MANAGER,Trưởng nhóm IT,20000000,3000000,Quản lý công nghệ thông tin,3
+IT_ENGINEER,Kỹ sư công nghệ thông tin,14500000,1500000,Phát triển và vận hành hệ thống,3
+SECURITY,Nhân viên bảo vệ,7500000,500000,Đảm bảo an ninh,4
+CLEANER,Nhân viên vệ sinh,6800000,400000,Vệ sinh văn phòng,5
+OPERATIONS,Nhân viên vận hành,9000000,600000,Hỗ trợ vận hành,6

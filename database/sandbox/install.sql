@@ -37,7 +37,7 @@ LOAD DATA LOCAL INFILE 'data/positions.csv' INTO TABLE positions
     CHARACTER SET utf8mb4
     FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
     LINES TERMINATED BY '\n'
-    (position_code, position_name, base_salary, allowance_amount, description);
+    (position_code, position_name, base_salary, allowance_amount, description, department_id);
 
 LOAD DATA LOCAL INFILE 'data/employees.csv' INTO TABLE employees
     CHARACTER SET utf8mb4

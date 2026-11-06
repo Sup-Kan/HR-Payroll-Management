@@ -7,7 +7,7 @@ Thứ tự nhập và cột của từng file (điền vào ô "Column names" c�
 | Thứ tự | File | Bảng | Column names |
 |---:|---|---|---|
 | 1 | `departments.csv` | departments | `department_code,department_name,description` |
-| 2 | `positions.csv` | positions | `position_code,position_name,base_salary,allowance_amount,description` |
+| 2 | `positions.csv` | positions | `position_code,position_name,base_salary,allowance_amount,description,department_id` |
 | 3 | `employees.csv` | employees | `employee_code,full_name,date_of_birth,gender,phone,address,department_id,position_id,hire_date,employment_status` |
 | 4 | `accounts.sql` | accounts | (file SQL, không cần điền) |
 | 5 | `payroll_settings.csv` | payroll_settings | `setting_id,standard_workdays_per_month,standard_hours_per_day,insurance_rate,income_tax_rate` |

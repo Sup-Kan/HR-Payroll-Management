@@ -8,6 +8,7 @@ import com.hrpayroll.service.AttendanceSummary;
 import com.hrpayroll.util.DateUtils;
 import com.hrpayroll.util.Dialogs;
 import com.hrpayroll.util.EmployeeCodeUtils;
+import com.hrpayroll.util.FormUtils;
 import com.hrpayroll.util.TableStyler;
 
 import javax.swing.*;
@@ -52,6 +53,14 @@ public class AttendanceFrame extends JFrame {
     private JComboBox<Integer> monthCombo;
     private JComboBox<Integer> yearCombo;
     private JTextField searchField;
+    private JComboBox<String> modeCombo;
+    private JTextField dayField;
+    private JButton prevDayButton;
+    private JButton nextDayButton;
+    private JLabel monthLabel;
+    private JLabel yearLabel;
+    /** true khi chương trình tự đồng bộ ô ngày/tháng, không kích hoạt lọc lại. */
+    private boolean syncing = false;
 
     private JTextField employeeCodeField;
     private JTextField employeeNameField;
@@ -59,7 +68,7 @@ public class AttendanceFrame extends JFrame {
     private JTextField checkInField;
     private JTextField checkOutField;
     private JComboBox<AttendanceType> statusCombo;
-    private JTextField noteField;
+    private JTextArea noteField;
     private JLabel noticeLabel;
 
     private JTable attendanceTable;
@@ -146,7 +155,7 @@ public class AttendanceFrame extends JFrame {
         searchField = new JTextField(14);
         searchField.setToolTipText("Nhập mã hoặc tên nhân viên");
 
-        filterButton = new JButton("Lọc kỳ");
+        filterButton = new JButton("Lọc");
         searchButton = new JButton("Tìm kiếm");
         refreshButton = new JButton("Làm mới");
 
@@ -154,14 +163,32 @@ public class AttendanceFrame extends JFrame {
             new FlowLayout(FlowLayout.LEFT, 8, 6)
         );
         filterPanel.setBorder(
-            BorderFactory.createTitledBorder("Kỳ chấm công")
+            BorderFactory.createTitledBorder("Bộ lọc")
         );
 
-        filterPanel.add(new JLabel("Tháng:"));
+        // Mặc định xem theo ngày, tại ngày có dữ liệu gần nhất.
+        modeCombo = new JComboBox<>(new String[] {"Theo ngày", "Theo tháng"});
+        dayField = new JTextField(9);
+        dayField.setToolTipText("Ngày cần xem, dạng " + DateUtils.DISPLAY_PATTERN);
+        dayField.setText(DateUtils.format(AttendanceDAO.latestDateOrToday()));
+        prevDayButton = new JButton("◀");
+        nextDayButton = new JButton("▶");
+        prevDayButton.setToolTipText("Ngày trước");
+        nextDayButton.setToolTipText("Ngày sau");
+        monthLabel = new JLabel("Tháng:");
+        yearLabel = new JLabel("Năm:");
+
+        filterPanel.add(new JLabel("Xem:"));
+        filterPanel.add(modeCombo);
+        filterPanel.add(prevDayButton);
+        filterPanel.add(dayField);
+        filterPanel.add(nextDayButton);
+        filterPanel.add(monthLabel);
         filterPanel.add(monthCombo);
-        filterPanel.add(new JLabel("Năm:"));
+        filterPanel.add(yearLabel);
         filterPanel.add(yearCombo);
         filterPanel.add(filterButton);
+        updateModeVisibility();
         filterPanel.add(Box.createHorizontalStrut(16));
         filterPanel.add(new JLabel("Tìm theo mã hoặc tên:"));
         filterPanel.add(searchField);
@@ -174,7 +201,7 @@ public class AttendanceFrame extends JFrame {
         dateField = new JTextField(12);
         checkInField = new JTextField(8);
         checkOutField = new JTextField(8);
-        noteField = new JTextField(30);
+        noteField = FormUtils.textArea(2, 30);
         statusCombo = new JComboBox<>(AttendanceType.values());
 
         noticeLabel = new JLabel(" ");
@@ -208,7 +235,7 @@ public class AttendanceFrame extends JFrame {
             "Giờ vào (HH:mm):", checkInField,
             "Giờ ra (HH:mm):", checkOutField
         );
-        addWideRow(formPanel, 3, "Ghi chú:", noteField);
+        addWideRow(formPanel, 3, "Ghi chú:", FormUtils.scroll(noteField));
         addWideRow(formPanel, 4, "", noticeLabel);
 
         JPanel topPanel = new JPanel(new BorderLayout(8, 8));
@@ -346,16 +373,26 @@ public class AttendanceFrame extends JFrame {
         summaryButton.addActionListener(e -> showSummary());
         backButton.addActionListener(e -> dispose());
 
-        filterButton.addActionListener(e -> applyFilters());
-        searchButton.addActionListener(e -> applyFilters());
-        searchField.addActionListener(e -> applyFilters());
-        monthCombo.addActionListener(e -> applyFilters());
-        yearCombo.addActionListener(e -> applyFilters());
+        filterButton.addActionListener(e -> applyFiltersChecked());
+        searchButton.addActionListener(e -> applyFiltersChecked());
+        searchField.addActionListener(e -> applyFiltersChecked());
+        dayField.addActionListener(e -> applyFiltersChecked());
+        prevDayButton.addActionListener(e -> shiftDay(-1));
+        nextDayButton.addActionListener(e -> shiftDay(1));
+        modeCombo.addActionListener(e -> {
+            if (!syncing) {
+                updateModeVisibility();
+                applyFilters();
+            }
+        });
+        monthCombo.addActionListener(e -> { if (!syncing) applyFilters(); });
+        yearCombo.addActionListener(e -> { if (!syncing) applyFilters(); });
 
         refreshButton.addActionListener(e -> {
             YearMonth latest = AttendanceDAO.latestPeriodOrNow();
             monthCombo.setSelectedItem(latest.getMonthValue());
             yearCombo.setSelectedItem(latest.getYear());
+            dayField.setText(DateUtils.format(AttendanceDAO.latestDateOrToday()));
             searchField.setText("");
 
             reloadFromDatabase();
@@ -432,7 +469,7 @@ public class AttendanceFrame extends JFrame {
             AttendanceCalculator.format2(record.getOvertimeHours()),
             record.getType().getLabel(),
             record.isConfirmed() ? "Đã xác nhận" : "Chưa xác nhận",
-            record.getNote()
+            record.getNote() == null ? "" : record.getNote().replaceAll("\\s*\\R\\s*", " ")
         };
     }
 
@@ -448,9 +485,104 @@ public class AttendanceFrame extends JFrame {
         }
     }
 
-    /** Áp dụng đồng thời bộ lọc kỳ và từ khóa tìm kiếm. */
+    private boolean dayMode() {
+        return modeCombo != null && modeCombo.getSelectedIndex() == 0;
+    }
+
+    /** Hiện ô ngày hoặc ô tháng/năm tùy chế độ xem. */
+    private void updateModeVisibility() {
+        boolean day = dayMode();
+        prevDayButton.setVisible(day);
+        dayField.setVisible(day);
+        nextDayButton.setVisible(day);
+        monthLabel.setVisible(!day);
+        monthCombo.setVisible(!day);
+        yearLabel.setVisible(!day);
+        yearCombo.setVisible(!day);
+
+        if (day) {
+            // Vào chế độ ngày: giữ ngày đang gõ nếu còn nằm trong tháng đã chọn.
+            LocalDate shown = parseDayField();
+            Integer m = (Integer) monthCombo.getSelectedItem();
+            Integer y = (Integer) yearCombo.getSelectedItem();
+            if (m != null && y != null && (shown == null
+                    || shown.getMonthValue() != m || shown.getYear() != y)) {
+                LocalDate pick = LocalDate.of(y, m, 1);
+                for (AttendanceRecord r : records) {
+                    if (r.getDate().getMonthValue() == m
+                            && r.getDate().getYear() == y
+                            && r.getDate().isAfter(pick)) {
+                        pick = r.getDate();
+                    }
+                }
+                dayField.setText(DateUtils.format(pick));
+            }
+        }
+    }
+
+    private LocalDate parseDayField() {
+        String text = dayField.getText().trim();
+        return DateUtils.isValid(text) ? DateUtils.parse(text) : null;
+    }
+
+    /** Lọc theo thao tác của người dùng: báo lỗi nếu ngày nhập sai. */
+    private void applyFiltersChecked() {
+        if (dayMode() && parseDayField() == null) {
+            showMessage("Ngày phải đúng dạng " + DateUtils.DISPLAY_PATTERN
+                + " (ví dụ 01/10/2026).", JOptionPane.WARNING_MESSAGE);
+            dayField.requestFocusInWindow();
+            return;
+        }
+        applyFilters();
+    }
+
+    private void shiftDay(int delta) {
+        LocalDate day = parseDayField();
+        if (day == null) {
+            showMessage("Ngày phải đúng dạng " + DateUtils.DISPLAY_PATTERN + ".",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        dayField.setText(DateUtils.format(day.plusDays(delta)));
+        applyFilters();
+    }
+
+    /** Áp dụng đồng thời bộ lọc ngày/tháng và từ khóa tìm kiếm. */
     private void applyFilters() {
-        if (sorter == null || monthCombo == null || yearCombo == null) {
+        if (sorter == null || monthCombo == null || yearCombo == null
+                || dayField == null) {
+            return;
+        }
+
+        if (dayMode()) {
+            final LocalDate day = parseDayField();
+            final String kw = searchField.getText().trim().toLowerCase(Locale.ROOT);
+
+            if (day != null) {
+                // Đồng bộ tháng/năm để Bảng công và thông báo khớp ngày đang xem.
+                syncing = true;
+                try {
+                    monthCombo.setSelectedItem(day.getMonthValue());
+                    yearCombo.setSelectedItem(day.getYear());
+                } finally {
+                    syncing = false;
+                }
+            }
+
+            sorter.setRowFilter(new RowFilter<DefaultTableModel, Integer>() {
+                @Override
+                public boolean include(
+                        Entry<? extends DefaultTableModel,
+                        ? extends Integer> entry) {
+                    AttendanceRecord record = records.get(entry.getIdentifier());
+                    if (day == null || !record.getDate().equals(day)) {
+                        return false;
+                    }
+                    return kw.isEmpty()
+                        || record.getEmployeeCode().toLowerCase(Locale.ROOT).contains(kw)
+                        || record.getEmployeeName().toLowerCase(Locale.ROOT).contains(kw);
+                }
+            });
             return;
         }
 
@@ -709,7 +841,7 @@ public class AttendanceFrame extends JFrame {
         int choice = JOptionPane.showConfirmDialog(
             this,
             "Xác nhận công cho " + targets.size()
-            + " bản ghi đang hiển thị (kỳ " + periodText() + ")?\n"
+            + " bản ghi đang hiển thị (" + viewText() + ")?\n"
             + "Sau khi xác nhận, các bản ghi này không thể sửa hoặc xóa.",
             "Xác nhận công",
             JOptionPane.YES_NO_OPTION,
@@ -1021,8 +1153,23 @@ public class AttendanceFrame extends JFrame {
         );
     }
 
-    /** Nhắc người dùng nếu bản ghi vừa lưu nằm ngoài kỳ đang lọc. */
+    /** Mô tả phạm vi đang xem: "ngày dd/MM/yyyy" hoặc "kỳ MM/yyyy". */
+    private String viewText() {
+        LocalDate day = dayMode() ? parseDayField() : null;
+        return day != null ? "ngày " + DateUtils.format(day) : "kỳ " + periodText();
+    }
+
+    /** Nhắc người dùng nếu bản ghi vừa lưu nằm ngoài phạm vi đang lọc. */
     private String periodHint(LocalDate date) {
+        if (dayMode()) {
+            LocalDate day = parseDayField();
+            if (day != null && day.equals(date)) {
+                return "";
+            }
+            return "\nBản ghi thuộc ngày " + DateUtils.format(date)
+                + " nên không hiển thị trong ngày đang lọc.";
+        }
+
         if (date.getMonthValue() == (Integer) monthCombo.getSelectedItem()
                 && date.getYear() == (Integer) yearCombo.getSelectedItem()) {
             return "";

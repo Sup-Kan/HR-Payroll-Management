@@ -8,6 +8,4 @@ Sau khi đăng nhập, ứng dụng yêu cầu chọn môi trường: **Dữ li�
 
 Xem `database/README.md` để khởi tạo hai database và danh sách 50 tài khoản demo.
 
-Mật khẩu demo của tài khoản: `HrDemo@2026`. Mật khẩu mở Primary trong cấu hình mẫu: `Primary@2026` (được đặt tại `db.properties`, không ghi giá trị thật vào `db.properties.example`).
-
-Vấn đề hiện tại: Các bảng chưa thể tương tác với nhau
+Mật khẩu demo của tài khoản: `HrDemo@2026`. Mật khẩu mở Primary trong cấu hình mẫu: `Primary@2026` (được đặt tại `db.properties`).

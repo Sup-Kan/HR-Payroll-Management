@@ -43,7 +43,7 @@ public class PayrollFrame extends JFrame {
     };
 
     private static final String[] DETAIL_COLUMNS = {
-        "Khoản mục", "Cách tính", "Số tiền (đồng)"
+        "Khoản mục", "Cách tính", "Số liệu", "Số tiền (đồng)"
     };
 
     private static final int MAX_ISSUE_LINES = 12;
@@ -74,6 +74,7 @@ public class PayrollFrame extends JFrame {
 
     private JButton selectPeriodButton;
     private JButton calculateButton;
+    private JButton calculateOneButton;
     private JButton checkButton;
     private JButton detailButton;
     private JButton saveButton;
@@ -222,7 +223,8 @@ public class PayrollFrame extends JFrame {
         mainPanel.add(centerPanel, BorderLayout.CENTER);
 
         // Nút thao tác
-        calculateButton = new JButton("Tính lương");
+        calculateButton = new JButton("Tính lương tất cả");
+        calculateOneButton = new JButton("Tính lương đã chọn");
         checkButton = new JButton("Kiểm tra dữ liệu");
         detailButton = new JButton("Xem chi tiết");
         saveButton = new JButton("Lưu bảng lương");
@@ -235,6 +237,7 @@ public class PayrollFrame extends JFrame {
             new FlowLayout(FlowLayout.RIGHT, 8, 4)
         );
         buttonPanel.add(checkButton);
+        buttonPanel.add(calculateOneButton);
         buttonPanel.add(calculateButton);
         buttonPanel.add(detailButton);
         buttonPanel.add(saveButton);
@@ -252,6 +255,7 @@ public class PayrollFrame extends JFrame {
         yearCombo.addActionListener(e -> loadPeriod());
 
         calculateButton.addActionListener(e -> calculate());
+        calculateOneButton.addActionListener(e -> calculateSelected());
         checkButton.addActionListener(e -> checkData());
         detailButton.addActionListener(e -> showDetail());
         saveButton.addActionListener(e -> savePayroll());
@@ -365,14 +369,13 @@ public class PayrollFrame extends JFrame {
         payrollTable.clearSelection();
         tableModel.setRowCount(0);
 
-        String status = state.closed
-            ? "Đã chốt"
-            : state.results != null ? "Đã tính" : "Chưa tính";
-
         for (int i = 0; i < inputs.size(); i++) {
             PayrollInput in = inputs.get(i);
             PayrollResult result = state.results == null
                 ? null : state.results.get(i);
+            String status = state.closed
+                ? "Đã chốt"
+                : result != null ? "Đã tính" : "Chưa tính";
 
             tableModel.addRow(new Object[]{
                 in.getEmployeeCode(),
@@ -405,7 +408,9 @@ public class PayrollFrame extends JFrame {
             "Kỳ %02d/%d  |  %s  |  %s  |  %s",
             period.getMonthValue(), period.getYear(),
             state.closed ? "Đã chốt" : "Đang mở",
-            state.results == null ? "Chưa tính" : "Đã tính",
+            state.results == null ? "Chưa tính"
+                : isComplete(state) ? "Đã tính"
+                : "Đã tính " + countCalculated(state) + "/" + inputs.size(),
             state.saved ? "Đã lưu" : "Chưa lưu"
         ));
 
@@ -419,6 +424,21 @@ public class PayrollFrame extends JFrame {
         taxField.setEditable(!state.closed);
 
         updateButtons();
+    }
+
+    /** Đã tính xong cho mọi nhân viên (không còn dòng nào chưa tính). */
+    private static boolean isComplete(PeriodState state) {
+        return state.results != null && countCalculated(state) == state.results.size();
+    }
+
+    private static int countCalculated(PeriodState state) {
+        int n = 0;
+        if (state.results != null) {
+            for (PayrollResult r : state.results) {
+                if (r != null) n++;
+            }
+        }
+        return n;
     }
 
     /** Kết quả đã tính nhưng tỷ lệ trên form không còn khớp tỷ lệ đã dùng. */
@@ -438,14 +458,15 @@ public class PayrollFrame extends JFrame {
         }
 
         PeriodState state = state();
-        boolean hasResults = state.results != null;
+        boolean hasResults = isComplete(state);
         boolean stale = isStale(state);
         boolean isAdmin = Session.getRole() == Role.ADMIN;
 
         calculateButton.setEnabled(!state.closed);
-        detailButton.setEnabled(
-            hasResults && payrollTable.getSelectedRow() >= 0
+        calculateOneButton.setEnabled(
+            !state.closed && payrollTable.getSelectedRow() >= 0
         );
+        detailButton.setEnabled(selectedResult() != null);
         saveButton.setEnabled(
             hasResults && !state.closed && !state.saved && !stale
         );
@@ -545,7 +566,32 @@ public class PayrollFrame extends JFrame {
         }
     }
 
+    /** Dòng đang chọn trong bảng (chỉ số theo danh sách inputs), hoặc -1. */
+    private int selectedIndex() {
+        int viewRow = payrollTable.getSelectedRow();
+        return viewRow < 0 ? -1 : payrollTable.convertRowIndexToModel(viewRow);
+    }
+
+    /** Kết quả của dòng đang chọn; null nếu chưa chọn hoặc chưa tính. */
+    private PayrollResult selectedResult() {
+        PeriodState state = state();
+        int index = selectedIndex();
+
+        if (state.results == null || index < 0 || index >= state.results.size()) {
+            return null;
+        }
+        return state.results.get(index);
+    }
+
+    /** Kiểm tra dữ liệu của đúng nhân viên đang chọn. */
     private void checkData() {
+        int index = selectedIndex();
+
+        if (index < 0) {
+            Dialogs.warn(this, "Vui lòng chọn một nhân viên trong bảng để kiểm tra.");
+            return;
+        }
+
         PayrollSettings settings = readSettings();
 
         if (settings == null) {
@@ -553,35 +599,139 @@ public class PayrollFrame extends JFrame {
         }
 
         PeriodState state = state();
-        List<PayrollResult> results = isStale(state) ? null : state.results;
-        List<PayrollIssue> issues =
-            PayrollCalculator.check(inputs, settings, results);
+        PayrollResult result = isStale(state) ? null : selectedResult();
+        List<PayrollInput> one = new ArrayList<>();
+        one.add(inputs.get(index));
+        List<PayrollResult> oneResult = null;
+        if (result != null) {
+            oneResult = new ArrayList<>();
+            oneResult.add(result);
+        }
+
+        List<PayrollIssue> issues = PayrollCalculator.check(one, settings, oneResult);
+        String who = inputs.get(index).getEmployeeCode() + " - "
+            + inputs.get(index).getEmployeeName();
 
         if (issues.isEmpty()) {
-            Dialogs.info(
-                this, "Dữ liệu hợp lệ, không có vấn đề cần xử lý."
-            );
+            Dialogs.info(this, who + ":\nDữ liệu hợp lệ, không có vấn đề cần xử lý.");
         } else if (PayrollCalculator.hasError(issues)) {
-            Dialogs.warn(this, describe(issues, false));
+            Dialogs.warn(this, who + ":\n\n" + describe(issues, false));
         } else {
-            Dialogs.info(this, describe(issues, false));
+            Dialogs.info(this, who + ":\n\n" + describe(issues, false));
         }
+    }
+
+    /**
+     * Tính lương cho đúng nhân viên đang chọn: kiểm tra dữ liệu của người đó,
+     * rồi tính. Các nhân viên khác giữ nguyên kết quả đã có (nếu có).
+     */
+    private void calculateSelected() {
+        PeriodState state = state();
+        int index = selectedIndex();
+
+        if (state.closed) {
+            Dialogs.warn(this, "Kỳ lương đã chốt, không thể tính lại.\n"
+                + "Chỉ Admin được mở lại kỳ để điều chỉnh.");
+            return;
+        }
+
+        if (index < 0) {
+            Dialogs.warn(this, "Vui lòng chọn một nhân viên trong bảng để tính lương.");
+            return;
+        }
+
+        PayrollSettings settings = readSettings();
+
+        if (settings == null) {
+            return;
+        }
+
+        if (countCalculated(state) > 0 && state.usedSettings != null
+                && !settings.sameRatesAs(state.usedSettings)) {
+            Dialogs.warn(this,
+                "Tỷ lệ bảo hiểm/thuế đã đổi so với các kết quả đã tính.\n"
+                + "Hãy bấm \"Tính lương tất cả\" để mọi nhân viên dùng cùng tỷ lệ.");
+            return;
+        }
+
+        // Lấy dữ liệu mới nhất của nhân viên này từ DB.
+        String code = inputs.get(index).getEmployeeCode();
+        PayrollInput fresh = null;
+
+        try {
+            for (PayrollInput candidate : PayrollDAO.loadInputs(selectedPeriod())) {
+                if (candidate.getEmployeeCode().equals(code)) {
+                    fresh = candidate;
+                    break;
+                }
+            }
+        } catch (SQLException ex) {
+            Dialogs.error(this, "Không tải được dữ liệu kỳ lương.\n" + ex.getMessage());
+            return;
+        }
+
+        if (fresh == null) {
+            Dialogs.warn(this, "Không tìm thấy dữ liệu của " + code
+                + " trong kỳ này. Hãy bấm Làm mới.");
+            return;
+        }
+
+        List<PayrollInput> one = new ArrayList<>();
+        one.add(fresh);
+        List<PayrollIssue> issues = PayrollCalculator.check(one, settings, null);
+
+        if (PayrollCalculator.hasError(issues)) {
+            Dialogs.warn(this, "Chưa thể tính lương cho " + code
+                + ", cần xử lý các lỗi sau:\n\n" + describe(issues, true));
+            return;
+        }
+
+        if (!issues.isEmpty() && !Dialogs.confirm(this,
+                "Dữ liệu của " + code + " có cảnh báo:\n\n" + describe(issues, false)
+                + "\n\nVẫn tiếp tục tính lương?", "Xác nhận tính lương")) {
+            return;
+        }
+
+        if (state.results == null) {
+            state.results = new ArrayList<>();
+            for (int i = 0; i < inputs.size(); i++) {
+                state.results.add(null);
+            }
+        }
+
+        PayrollResult result = PayrollCalculator.calculate(fresh, settings);
+        inputs.set(index, fresh);
+        state.results.set(index, result);
+        state.usedSettings = settings;
+        state.saved = false;
+
+        refreshTable();
+        int view = payrollTable.convertRowIndexToView(index);
+        if (view >= 0) {
+            payrollTable.setRowSelectionInterval(view, view);
+        }
+        refreshStateView();
+
+        Dialogs.info(this, "Đã tính lương cho " + code + " - " + fresh.getEmployeeName()
+            + ".\nThực lĩnh: " + MoneyUtils.format(result.getNetSalary()) + " đồng."
+            + (isComplete(state)
+                ? "\nĐã tính đủ mọi nhân viên, có thể lưu bảng lương."
+                : "\nCòn " + (inputs.size() - countCalculated(state))
+                    + " nhân viên chưa tính; cần tính đủ mới lưu được."));
     }
 
     private void showDetail() {
         PeriodState state = state();
-        int viewRow = payrollTable.getSelectedRow();
+        PayrollResult r = selectedResult();
 
-        if (state.results == null || viewRow < 0) {
+        if (r == null) {
             Dialogs.warn(
-                this, "Vui lòng tính lương và chọn một nhân viên để xem."
+                this,
+                "Vui lòng chọn một nhân viên đã được tính lương để xem chi tiết."
             );
             return;
         }
 
-        PayrollResult r = state.results.get(
-            payrollTable.convertRowIndexToModel(viewRow)
-        );
         PayrollInput in = r.getInput();
         PayrollSettings used = state.usedSettings;
 
@@ -590,38 +740,57 @@ public class PayrollFrame extends JFrame {
         String taxPercent =
             PayrollSettings.toPercentText(used.getTaxRate());
 
+        String base = MoneyUtils.format(in.getBaseSalary());
+        String days = num(in.getPaidWorkdays());
+        String weightedHours = "(" + num(in.getOvertimeWeekday()) + " x 1,5 + "
+            + num(in.getOvertimeWeekend()) + " x 2 + "
+            + num(in.getOvertimeHoliday()) + " x 3)";
+
+        // Cột "Số liệu" thay số thật vào công thức ở cột "Cách tính".
         Object[][] rows = {
             {"Lương cơ bản", "Theo chức vụ: " + in.getPosition(),
-                MoneyUtils.format(in.getBaseSalary())},
+                base, MoneyUtils.format(in.getBaseSalary())},
             {"Số công tính lương",
-                formatDecimal(in.getPaidWorkdays()) + " công "
-                + "(công làm việc + nghỉ phép năm; công chuẩn "
-                + PayrollSettings.STANDARD_WORKDAYS + ")", ""},
+                "Công làm việc + nghỉ phép năm (công chuẩn "
+                + PayrollSettings.STANDARD_WORKDAYS + ")",
+                days + " công", ""},
             {"Lương theo công", "Lương cơ bản / 22 x số công",
+                base + " / 22 x " + days,
                 MoneyUtils.format(r.getSalaryByAttendance())},
             {"Phụ cấp", "Cố định theo chức vụ",
+                MoneyUtils.format(in.getAllowance()),
                 MoneyUtils.format(in.getAllowance())},
             {"Thưởng", "Quyết định khen thưởng đã duyệt",
+                MoneyUtils.format(in.getRewardAmount()),
                 MoneyUtils.format(in.getRewardAmount())},
-            {"Tiền tăng ca", "Lương cơ bản / (22 x 8) x giờ x hệ số",
+            {"Tiền tăng ca",
+                "Lương cơ bản / (22 x 8) x (giờ x hệ số: thường 1,5; cuối tuần 2; lễ 3)",
+                base + " / (22 x 8) x " + weightedHours,
                 MoneyUtils.format(r.getOvertimeAmount())},
-            {"   Giờ tăng ca",
-                formatDecimal(in.getOvertimeWeekday()) + "h ngày thường (150%), "
-                + formatDecimal(in.getOvertimeWeekend()) + "h cuối tuần (200%), "
-                + formatDecimal(in.getOvertimeHoliday()) + "h ngày lễ (300%)",
-                ""},
             {"Tổng thu nhập",
                 "Lương theo công + phụ cấp + thưởng + tăng ca",
+                MoneyUtils.format(r.getSalaryByAttendance()) + " + "
+                    + MoneyUtils.format(in.getAllowance()) + " + "
+                    + MoneyUtils.format(in.getRewardAmount()) + " + "
+                    + MoneyUtils.format(r.getOvertimeAmount()),
                 MoneyUtils.format(r.getGrossSalary())},
             {"Trừ: Bảo hiểm",
-                insurancePercent + "% x lương cơ bản",
+                "Tỷ lệ bảo hiểm x lương cơ bản",
+                insurancePercent + "% x " + base,
                 MoneyUtils.format(r.getInsuranceAmount())},
             {"Trừ: Thuế thu nhập",
-                taxPercent + "% x (tổng thu nhập - bảo hiểm)",
+                "Tỷ lệ thuế x (tổng thu nhập - bảo hiểm)",
+                taxPercent + "% x (" + MoneyUtils.format(r.getGrossSalary())
+                    + " - " + MoneyUtils.format(r.getInsuranceAmount()) + ")",
                 MoneyUtils.format(r.getIncomeTaxAmount())},
             {"Trừ: Phạt kỷ luật", "Quyết định kỷ luật đã duyệt có số tiền",
+                MoneyUtils.format(in.getDisciplineAmount()),
                 MoneyUtils.format(in.getDisciplineAmount())},
-            {"THỰC LĨNH", "Tổng thu nhập - tổng khấu trừ",
+            {"THỰC LĨNH", "Tổng thu nhập - bảo hiểm - thuế - phạt kỷ luật",
+                MoneyUtils.format(r.getGrossSalary()) + " - "
+                    + MoneyUtils.format(r.getInsuranceAmount()) + " - "
+                    + MoneyUtils.format(r.getIncomeTaxAmount()) + " - "
+                    + MoneyUtils.format(in.getDisciplineAmount()),
                 MoneyUtils.format(r.getNetSalary())}
         };
 
@@ -636,9 +805,10 @@ public class PayrollFrame extends JFrame {
         JTable detailTable = new JTable(detailModel);
         TableStyler.apply(
             detailTable,
-            new int[] {150, 520, 130},
+            new int[] {140, 330, 330, 120},
             new int[] {
-                SwingConstants.LEFT, SwingConstants.LEFT, SwingConstants.RIGHT
+                SwingConstants.LEFT, SwingConstants.LEFT,
+                SwingConstants.LEFT, SwingConstants.RIGHT
             }
         );
 
@@ -658,7 +828,7 @@ public class PayrollFrame extends JFrame {
         content.add(bottom, BorderLayout.SOUTH);
 
         dialog.setContentPane(content);
-        dialog.setSize(900, 400);
+        dialog.setSize(1000, 400);
         dialog.setLocationRelativeTo(this);
         closeButton.addActionListener(e -> dialog.dispose());
         dialog.setVisible(true);
@@ -854,6 +1024,11 @@ public class PayrollFrame extends JFrame {
         }
 
         return text.toString().trim();
+    }
+
+    /** Số dùng trong công thức: bỏ số 0 thừa, dấu phẩy thập phân (2,5). */
+    private static String num(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString().replace('.', ',');
     }
 
     private static String formatDecimal(BigDecimal value) {

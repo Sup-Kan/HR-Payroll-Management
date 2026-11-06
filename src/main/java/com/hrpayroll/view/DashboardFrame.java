@@ -1,5 +1,6 @@
 package com.hrpayroll.view;
 
+import com.hrpayroll.dao.PresenceDAO;
 import com.hrpayroll.model.Feature;
 import com.hrpayroll.model.DatabaseEnvironment;
 import com.hrpayroll.model.Role;
@@ -21,6 +22,9 @@ public class DashboardFrame extends JFrame {
     private final Map<Feature, JFrame> openFrames =
             new EnumMap<>(Feature.class);
 
+    private final String presenceUser = Session.getUsername();
+    private final javax.swing.Timer heartbeat = new javax.swing.Timer(
+            PresenceDAO.HEARTBEAT_SECONDS * 1000, e -> sendPresence(true));
     private final JLabel statusLabel = new JLabel();
     private final JLabel environmentBadge = new JLabel("", SwingConstants.CENTER);
 
@@ -85,14 +89,32 @@ public class DashboardFrame extends JFrame {
         mainPanel.add(headerPanel, BorderLayout.NORTH);
 
         // Các nút chức năng, bật/tắt theo vai trò đang đăng nhập
-        JPanel menuPanel = new JPanel(new GridLayout(3, 2, 16, 16));
+        // Chỉ hiện các chức năng vai trò hiện tại được dùng.
+        JPanel menuPanel = new JPanel(new GridLayout(0, 2, 16, 16));
         menuPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
 
         for (Feature feature : Feature.values()) {
-            addMenuButton(menuPanel, feature);
+            if (Session.canAccess(feature)) {
+                addMenuButton(menuPanel, feature);
+            }
         }
 
-        mainPanel.add(menuPanel, BorderLayout.CENTER);
+        if (menuPanel.getComponentCount() == 0) {
+            menuPanel.setLayout(new BorderLayout());
+            menuPanel.add(new JLabel(
+                    "Tài khoản chưa được cấp chức năng nào.",
+                    SwingConstants.CENTER));
+        }
+
+        // Ít chức năng thì giữ ô nút vừa phải, không kéo dãn kín màn hình.
+        if (menuPanel.getComponentCount() <= 2) {
+            JPanel top = new JPanel(new BorderLayout());
+            menuPanel.setPreferredSize(new Dimension(0, 170));
+            top.add(menuPanel, BorderLayout.NORTH);
+            mainPanel.add(top, BorderLayout.CENTER);
+        } else {
+            mainPanel.add(menuPanel, BorderLayout.CENTER);
+        }
 
         // Thanh trạng thái
         refreshEnvironmentDisplay();
@@ -102,35 +124,145 @@ public class DashboardFrame extends JFrame {
 
         switchButton.addActionListener(e -> switchEnvironment());
 
-        logoutButton.addActionListener(e -> {
-            int choice = JOptionPane.showConfirmDialog(
-                    this,
-                    "Bạn có muốn đăng xuất không?",
-                    "Xác nhận đăng xuất",
-                    JOptionPane.YES_NO_OPTION
-            );
-
-            if (choice == JOptionPane.YES_OPTION) {
-                closeModuleWindows();
-                Session.logout();
-                dispose();
-                new LoginFrame().setVisible(true);
+        // Báo "đang trực tuyến" định kỳ; xóa khi đóng Dashboard (đăng xuất/thoát/đóng cửa sổ).
+        sendPresence(true);
+        heartbeat.start();
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                stopPresence();
             }
         });
 
-        exitButton.addActionListener(e -> {
-            int choice = JOptionPane.showConfirmDialog(
-                    this,
-                    "Bạn có chắc chắn muốn thoát chương trình?",
-                    "Xác nhận thoát",
-                    JOptionPane.YES_NO_OPTION
-            );
+        logoutButton.addActionListener(e -> logout());
+        exitButton.addActionListener(e -> exitApplication());
 
-            if (choice == JOptionPane.YES_OPTION) {
-                closeModuleWindows();
-                dispose();
+        setJMenuBar(buildMenuBar(canSwitch));
+    }
+
+    private void logout() {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Bạn có muốn đăng xuất không?",
+                "Xác nhận đăng xuất",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (choice == JOptionPane.YES_OPTION) {
+            closeModuleWindows();
+            stopPresence();
+            Session.logout();
+            dispose();
+            new LoginFrame().setVisible(true);
+        }
+    }
+
+    private void exitApplication() {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Bạn có chắc chắn muốn thoát chương trình?",
+                "Xác nhận thoát",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (choice == JOptionPane.YES_OPTION) {
+            closeModuleWindows();
+            stopPresence();
+            dispose();
+        }
+    }
+
+    /**
+     * Thanh menu: Hệ thống, Chức năng (chỉ các mục vai trò được dùng) và
+     * Trợ giúp. Các lệnh dùng chung xử lý với các nút trên Dashboard.
+     */
+    private JMenuBar buildMenuBar(boolean canSwitch) {
+        int ctrl = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+
+        JMenu systemMenu = new JMenu("Hệ thống");
+        systemMenu.setMnemonic(java.awt.event.KeyEvent.VK_H);
+
+        JMenuItem switchItem = new JMenuItem("Đổi môi trường dữ liệu...");
+        switchItem.setEnabled(canSwitch);
+        switchItem.addActionListener(e -> switchEnvironment());
+
+        JMenuItem logoutItem = new JMenuItem("Đăng xuất");
+        logoutItem.setAccelerator(KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_L, ctrl));
+        logoutItem.addActionListener(e -> logout());
+
+        JMenuItem exitItem = new JMenuItem("Thoát");
+        exitItem.setAccelerator(KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_Q, ctrl));
+        exitItem.addActionListener(e -> exitApplication());
+
+        systemMenu.add(switchItem);
+        systemMenu.addSeparator();
+        systemMenu.add(logoutItem);
+        systemMenu.add(exitItem);
+
+        JMenu featureMenu = new JMenu("Chức năng");
+        featureMenu.setMnemonic(java.awt.event.KeyEvent.VK_C);
+
+        int shortcut = 0;
+        for (Feature feature : Feature.values()) {
+            if (!Session.canAccess(feature)) {
+                continue;
             }
-        });
+            JMenuItem item = new JMenuItem(feature.getTitle());
+            item.setToolTipText(feature.getDescription());
+            if (++shortcut <= 9) {
+                item.setAccelerator(KeyStroke.getKeyStroke(
+                        java.awt.event.KeyEvent.VK_0 + shortcut, ctrl));
+            }
+            item.addActionListener(e -> openFeature(feature));
+            featureMenu.add(item);
+        }
+        if (featureMenu.getItemCount() == 0) {
+            JMenuItem none = new JMenuItem("(Chưa được cấp chức năng nào)");
+            none.setEnabled(false);
+            featureMenu.add(none);
+        }
+
+        JMenu helpMenu = new JMenu("Trợ giúp");
+        helpMenu.setMnemonic(java.awt.event.KeyEvent.VK_T);
+        JMenuItem aboutItem = new JMenuItem("Giới thiệu");
+        aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(
+                this,
+                "Hệ thống Quản lý Nhân sự & Tiền lương\n"
+                + "Java Swing + JDBC + MariaDB\n\n"
+                + buildStatusText(),
+                "Giới thiệu",
+                JOptionPane.INFORMATION_MESSAGE));
+        helpMenu.add(aboutItem);
+
+        JMenuBar menuBar = new JMenuBar();
+        menuBar.add(systemMenu);
+        menuBar.add(featureMenu);
+        menuBar.add(helpMenu);
+        return menuBar;
+    }
+
+    /** Ghi trạng thái trên luồng nền để không làm đơ giao diện; lỗi DB bị bỏ qua. */
+    private void sendPresence(boolean online) {
+        Thread t = new Thread(() -> {
+            try {
+                if (online) {
+                    PresenceDAO.touch(presenceUser);
+                } else {
+                    PresenceDAO.clear(presenceUser);
+                }
+            } catch (Exception ex) {
+                ex.printStackTrace(); // thường do thiếu cột last_seen_at
+            }
+        }, "presence");
+        t.setDaemon(false);
+        t.start();
+    }
+
+    private void stopPresence() {
+        heartbeat.stop();
+        sendPresence(false);
     }
 
     private void refreshEnvironmentDisplay() {
@@ -288,6 +420,10 @@ public class DashboardFrame extends JFrame {
                 return new ReportFrame();
             case ACCOUNT:
                 return new AccountFrame();
+            case CATALOG:
+                return new CatalogFrame();
+            case PROFILE:
+                return new ProfileFrame();
             default:
                 throw new IllegalArgumentException(
                     "Chưa có màn hình cho chức năng: " + feature
